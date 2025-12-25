@@ -1,0 +1,103 @@
+
+POST and PREFIX inc and dec
+++, --
+
++=
+-=
+/=
+*=
+**=
+/=
+
+
+===========================================================
+
+Threading
+
+parallel [
+    <block-1>
+] and [
+    <block-2>
+] and [
+    <block-n>
+] wait
+
+async [
+    <block-1>
+] and [
+    <block-2>
+] and [
+    <block-n>
+] await
+
+sync [
+    <block-1>
+] and [
+    <block-2>
+] and [
+    <block-n>
+] flow
+
+    METHODS
+
+create_thread,
+join_thread,
+kill_thread,
+detach_thread,
+exit_thread,
+sleep_thread,
+thread_id,
+
+
+================================================================================
+
+signal_code = "hi:1"
+
+signal_pulse
+[
+    (code=signal_code, arg) => [
+        <execute this block>
+
+    ]
+]
+
+signal_emit(code=signal_code, arg="Hello")
+
+--------------------------------------------------------------------------------------------------
+
+signal_pulse IO (KeyBoard, Mouse, TackPad)
+[
+    K (code="f5") => [
+        log(src=_KEYBOARD_CURR_KEY_PRESS_)
+    ]
+
+    T (code="x-y") => [
+        log(src= [_TRACK_PAD_AXIS_X, _TRACK_PAD_AXIS_Y], uw=true)
+    ]
+
+    M (code="left-right") => [
+        log(src=[_MOUSE_ACTIVITY_LEFT, MOUSE_ACTIVITY_RIGHT], uw=true)
+    ]
+]
+
+-------------------------------------------------------------------------------------------------
+
+signal_pulse Error
+[
+    Err(code=11) => [
+
+    ]
+    Err(code=12) => [
+
+    ]
+]
+
+=============================================================================
+
+Macro 
+#include <>
+will used to import library
+and care about circular import
+
+=============================================================================
+
