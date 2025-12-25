@@ -14,6 +14,10 @@ pub struct Parser {
 }
 
 impl Parser {
+    // =========================================================
+    // Constructor
+    // =========================================================
+
     pub fn new(tokens: Vec<Token>) -> Self {
         Self {
             tokens,
@@ -26,7 +30,6 @@ impl Parser {
     // Entry point
     // =========================================================
 
-    /// Parse a full program (list of statements)
     pub fn parse(&mut self) -> Result<Vec<Stmt>, Vec<ParseError>> {
         let mut statements = Vec::new();
 
@@ -45,16 +48,14 @@ impl Parser {
     }
 
     // =========================================================
-    // Declarations & Statements (STRUCTURE ONLY)
+    // Declarations & Statements
     // =========================================================
 
     fn declaration(&mut self) -> Result<Stmt, ParseError> {
-        // later: var / fun / class
         self.statement()
     }
 
     fn statement(&mut self) -> Result<Stmt, ParseError> {
-        // later: if / while / for / return / block
         self.expression_statement()
     }
 
@@ -64,7 +65,7 @@ impl Parser {
     }
 
     // =========================================================
-    // Expression grammar (Crafting Interpreters)
+    // Expressions (precedence climbing)
     // =========================================================
 
     fn expression(&mut self) -> Result<Expr, ParseError> {
@@ -106,10 +107,7 @@ impl Parser {
     fn equality(&mut self) -> Result<Expr, ParseError> {
         let mut expr = self.comparison()?;
 
-        while self.matches(&[
-            TokenKind::BangEqual,
-            TokenKind::EqualEqual,
-        ]) {
+        while self.matches(&[TokenKind::BangEqual, TokenKind::EqualEqual]) {
             let operator = self.previous().clone();
             let right = self.comparison()?;
             expr = Expr::Binary {
@@ -146,10 +144,7 @@ impl Parser {
     fn term(&mut self) -> Result<Expr, ParseError> {
         let mut expr = self.factor()?;
 
-        while self.matches(&[
-            TokenKind::Plus,
-            TokenKind::Minus,
-        ]) {
+        while self.matches(&[TokenKind::Plus, TokenKind::Minus]) {
             let operator = self.previous().clone();
             let right = self.factor()?;
             expr = Expr::Binary {
@@ -165,10 +160,7 @@ impl Parser {
     fn factor(&mut self) -> Result<Expr, ParseError> {
         let mut expr = self.unary()?;
 
-        while self.matches(&[
-            TokenKind::Star,
-            TokenKind::Slash,
-        ]) {
+        while self.matches(&[TokenKind::Star, TokenKind::Slash]) {
             let operator = self.previous().clone();
             let right = self.unary()?;
             expr = Expr::Binary {
@@ -182,65 +174,63 @@ impl Parser {
     }
 
     fn unary(&mut self) -> Result<Expr, ParseError> {
-        if self.matches(&[
-            TokenKind::Bang,
-            TokenKind::Minus,
-        ]) {
-            let operator = self.previous().clone();
-            let right = self.unary()?;
-            return Ok(Expr::Unary {
-                operator,
-                right: Box::new(right),
-            });
+        match self.peek().kind {
+            TokenKind::Bang | TokenKind::Minus => {
+                let operator = self.advance();
+                let right = self.unary()?;
+                Ok(Expr::Unary {
+                    operator,
+                    right: Box::new(right),
+                })
+            }
+            _ => self.primary(),
         }
-
-        self.primary()
     }
 
     fn primary(&mut self) -> Result<Expr, ParseError> {
-        if self.matches(&[TokenKind::False]) {
-            return Ok(Expr::_Literal_(Literal::Boolean(false)));
-        }
+        match self.peek().kind {
+            TokenKind::False => {
+                self.advance();
+                Ok(Expr::_Literal_(Literal::Boolean(false)))
+            }
 
-        if self.matches(&[TokenKind::True]) {
-            return Ok(Expr::_Literal_(Literal::Boolean(true)));
-        }
+            TokenKind::True => {
+                self.advance();
+                Ok(Expr::_Literal_(Literal::Boolean(true)))
+            }
 
-        if self.matches(&[TokenKind::Nil]) {
-            return Ok(Expr::_Literal_(Literal::Nil));
-        }
+            TokenKind::Nil => {
+                self.advance();
+                Ok(Expr::_Literal_(Literal::Nil))
+            }
 
-        if self.matches(&[TokenKind::Number]) {
-            let token = self.previous().clone();
-            let literal = token.lexeme;
-            return Ok(Expr::_Literal_(Literal::Number(literal.parse::<f64>().unwrap())))
-        }
+            TokenKind::Number => {
+                let token = self.advance();
+                let value = token.lexeme.parse::<f64>().unwrap();
+                Ok(Expr::_Literal_(Literal::Number(value)))
+            }
 
-        if self.matches(&[TokenKind::String]) {
-            let token = self.previous().clone();
-            let literal = token.lexeme;
-            return Ok(Expr::_Literal_(Literal::String(literal)));
-        }
+            TokenKind::String => {
+                let token = self.advance();
+                Ok(Expr::_Literal_(Literal::String(token.lexeme)))
+            }
 
-        if self.matches(&[TokenKind::LeftParen]) {
-            let expr = self.expression()?;
-            self.consume(TokenKind::RightParen, "Expect ')' after expression.")?;
-            return Ok(Expr::Grouping(Box::new(expr)));
-        }
+            TokenKind::LeftParen => {
+                self.advance();
+                let expr = self.expression()?;
+                self.consume(TokenKind::RightParen, "Expect ')' after expression.")?;
+                Ok(Expr::Grouping(Box::new(expr)))
+            }
 
-        if self.matches(&[TokenKind::Log]) {
-            let expr = self.expression()?;
-            return Ok(Expr::Log(Box::new(expr)))
-        }
+            TokenKind::Log => {
+                self.advance();
+                let expr = self.expression()?;
+                Ok(Expr::Log(Box::new(expr)))
+            }
 
-        Err(self.error("Expect expression"))
+            _ => Err(self.error("Expect expression")),
+        }
     }
-
-    // =========================================================
-    // Literal conversion (IMPORTANT FIX)
-    // =========================================================
-
-
 
     // =========================================================
     // Cursor utilities
@@ -304,14 +294,12 @@ impl Parser {
         self.advance();
 
         while !self.is_at_end() {
-            
             match self.peek().kind {
-                TokenKind::If
-                | TokenKind::Return => return,
-                _ => {}
-            }
-
-            self.advance();
+                TokenKind::If | TokenKind::Return => return,
+                _ => {
+                    self.advance();
+                }
+            };
         }
     }
 }
