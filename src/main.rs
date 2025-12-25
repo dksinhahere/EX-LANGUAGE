@@ -24,14 +24,28 @@ fn run_source(source: &str) {
 
     // 2) Parse
     let mut parser = Parser::new(tokens);
-    let program = parser.parse();
+    let statements = match parser.parse() {
+        Ok(stmts) => stmts,
+        Err(errors) => {
+            for err in errors {
+                eprintln!(
+                    "[line {}] Error at '{}': {}",
+                    err.token.line,
+                    err.token.lexeme,
+                    err.message
+                );
+            }
+            return;
+        }
+    };
 
-    // 3) Interpret (interpreter updates environment internally)
+    // 3) Interpret
     let mut interp = Interpreter::new();
-    if let Err(e) = interp.accept(&program) {
+    if let Err(e) = interp.interpret(&statements) {
         eprintln!("Runtime error: {e}");
     }
 }
+
 
 fn run_ex_file(path_str: &str) {
     let path = Path::new(path_str);

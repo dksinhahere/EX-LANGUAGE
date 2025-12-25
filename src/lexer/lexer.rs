@@ -120,7 +120,7 @@ impl Lexer {
 
             '&' => {
                 if self.match_char('&') {
-                    self.add_token(TokenKind::AmpersandAmpersand);
+                    self.add_token(TokenKind::And);
                 } else {
                     self.add_token(TokenKind::Ampersand);
                 }
@@ -130,7 +130,7 @@ impl Lexer {
                 if self.match_char('|') {
                     self.add_token(TokenKind::PipePipe);
                 } else {
-                    return Err(self.err("Unexpected character: '|' (did you mean '||'?)"));
+                    self.add_token(TokenKind::Or);
                 }
             }
 
@@ -595,8 +595,8 @@ impl Lexer {
             "public" => (TokenKind::Public, None),
             "private" => (TokenKind::Private, None),
 
-            "true" => (TokenKind::Bool, Some(Literal::Bool(true))),
-            "false" => (TokenKind::Bool, Some(Literal::Bool(false))),
+            "true" => (TokenKind::True, Some(Literal::Bool(true))),
+            "false" => (TokenKind::False, Some(Literal::Bool(false))),
             "nil" => (TokenKind::Nil, None),
 
             "_define_" => (TokenKind::DefineMacro, None),

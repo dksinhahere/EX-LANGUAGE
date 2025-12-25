@@ -31,19 +31,20 @@ pub enum TokenKind {
     BangEqual,
     MinusMinus,
     PlusPlus,
-    AmpersandAmpersand,
     PipePipe,
     IdentityOperator, // ?
     Ampersand,
     ColonColon, // ::
     Arrow,     // ->
     Command,   // >>
+    And,
 
     // Keywords and other
     Import,
     Label,
     If,
     Elif,
+    Or,
     Else,
     Jump,
     Unlabel,
@@ -108,6 +109,9 @@ pub enum TokenKind {
 
     Log,
     Eof,
+    False,
+    True,
+
 }
 
 #[derive(Debug, Clone, PartialEq)]
