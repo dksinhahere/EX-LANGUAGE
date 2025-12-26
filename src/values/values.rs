@@ -1,5 +1,20 @@
 use crate::interpreter::error::{RuntimeError, RuntimeErrorKind, RuntimeResult};
+use crate::parser::ast::Stmt;
 use std::collections::HashMap;
+
+#[derive(Debug, Clone)]
+pub struct Function {
+    pub name: String,
+    pub params: Vec<String>,
+    pub defaults: Vec<String>,
+    pub body: Vec<Stmt>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ControlFlow {
+    pub name: String,
+    pub body: Vec<Stmt>,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -10,6 +25,20 @@ pub enum Value {
     Bool(bool),
     Char(char),
     Nil,
+    Function(Function),
+    ControlFlow(ControlFlow),
+}
+
+impl PartialEq for Function {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+    }
+}
+
+impl PartialEq for ControlFlow {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+    }
 }
 
 impl Value {
@@ -22,6 +51,8 @@ impl Value {
             Value::BigInt(s) => s != "0" && !s.is_empty(),
             Value::String(s) => !s.is_empty(),
             Value::Char(_) => true,
+            Value::Function(_) => true,
+            Value::ControlFlow(_) => true,
         }
     }
 
@@ -34,6 +65,8 @@ impl Value {
             Value::Bool(_) => "Bool",
             Value::Char(_) => "Char",
             Value::Nil => "Nil",
+            Value::Function(_) => "Function",
+            Value::ControlFlow(_) => "ControlFlow",
         }
     }
 }
@@ -45,7 +78,7 @@ struct Binding {
     smart_lock: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Environment {
     scopes: Vec<HashMap<String, Binding>>,
 }

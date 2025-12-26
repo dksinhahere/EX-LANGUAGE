@@ -1,6 +1,6 @@
 use crate::lexer::Token;
 
-
+#[derive(Debug, Clone)] 
 pub enum Stmt {
     Expression(Expr),
     SmartLock{
@@ -17,7 +17,16 @@ pub enum Stmt {
     },
     SmartConst{
         variable:String
-    }
+    },
+    Label {
+        _label_: Vec<(String, bool, Vec<String>, Vec<String>, Vec<Stmt>)>
+    },
+    If {
+        condition: Expr,
+        then_branch: Vec<Stmt>,
+        elif_branches: Vec<(Expr, Vec<Stmt>)>,
+        else_branch: Option<Vec<Stmt>>,
+    },
 }
 
 
@@ -39,6 +48,7 @@ pub enum Expr {
         name:String
     },
     FunctionCall {
+        function:String,
         args: Vec<(String, Expr)>
     },
     AllocateVariable{

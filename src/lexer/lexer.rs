@@ -630,6 +630,12 @@ impl Lexer {
             "_revive_" => (TokenKind::VRevive, None),
             "_const_" => (TokenKind::VConst, None),
 
+            "label" => (TokenKind::Label, None),
+            "jump" => (TokenKind::Jump, None),
+            "if" => (TokenKind::If, None),
+            "else" => (TokenKind::Else, None),
+            "elif" => (TokenKind::Elif, None),
+
             _ => (
                 TokenKind::Identifier,
                 Some(Literal::Identifier(text.clone())),

@@ -35,17 +35,13 @@ pub enum TokenKind {
     IdentityOperator, // ?
     Ampersand,
     ColonColon, // ::
-    Arrow,     // ->
-    Command,   // >>
+    Arrow,      // ->
+    Command,    // >>
     And,
 
     // Keywords and other
     Import,
-    Label,
-    If,
-    Elif,
     Or,
-    Else,
     Return,
 
     // switch/enum
@@ -80,7 +76,11 @@ pub enum TokenKind {
     VKill,
     VRevive,
     VConst,
-
+    Label,
+    Jump,
+    If,
+    Else,
+    Elif
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -117,7 +117,12 @@ impl Token {
         }
     }
 
-    pub fn with_literal(kind: TokenKind, lexeme: impl Into<String>, line: usize, lit: Literal) -> Self {
+    pub fn with_literal(
+        kind: TokenKind,
+        lexeme: impl Into<String>,
+        line: usize,
+        lit: Literal,
+    ) -> Self {
         Self {
             kind,
             lexeme: lexeme.into(),
