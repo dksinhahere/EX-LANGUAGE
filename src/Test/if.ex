@@ -4,15 +4,15 @@ name = "Danishk"
 name = false
 
 if name {
-    log "Working"
+    print "Working"
 
 } elif name == false {
     
-    log "RUNNING"
-    log "ELIF"
-    log "BRANCH"
+    print "RUNNING"
+    print "ELIF"
+    print "BRANCH"
 
 } else {
-    log "Else Branch"
-    log "Fine"
+    print "Else Branch"
+    print "Fine"
 }

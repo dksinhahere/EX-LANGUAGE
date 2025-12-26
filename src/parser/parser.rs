@@ -130,8 +130,69 @@ impl Parser {
                 self.advance();
                 Ok(Stmt::Pass)
             }
+
+            TokenKind::For => self.for_loop(),
+
+            TokenKind::Do => self.do_while_loop(),
+
+            TokenKind::While => self.while_loop(),
             _ => self.expression_statement(),
         }
+    }
+
+    fn while_loop(&mut self) -> Result<Stmt, ParseError> {
+        self.advance(); // consume 'while'
+
+        let condition = self.expression()?;
+        self.consume(TokenKind::LeftBrace, "Expected '{' after while condition")?;
+
+        let mut body = Vec::new();
+        while !self.check(TokenKind::RightBrace) && !self.is_at_end() {
+            body.push(self.statement()?);
+        }
+
+        self.consume(TokenKind::RightBrace, "Expected '}' after while body")?;
+        Ok(Stmt::While { condition, body })
+    }
+
+    fn do_while_loop(&mut self) -> Result<Stmt, ParseError> {
+        self.advance(); // consume 'do'
+
+        self.consume(TokenKind::LeftBrace, "Expected '{' after 'do'")?;
+
+        let mut body = Vec::new();
+        while !self.check(TokenKind::RightBrace) && !self.is_at_end() {
+            body.push(self.statement()?);
+        }
+
+        self.consume(TokenKind::RightBrace, "Expected '}' after do body")?;
+        self.consume(TokenKind::While, "Expected 'while' after do-while body")?;
+        let condition = self.expression()?;
+
+        Ok(Stmt::DoWhile { body, condition })
+    }
+
+    fn for_loop(&mut self) -> Result<Stmt, ParseError> {
+        self.advance(); // consume 'for'
+
+        let iterator = self.consume_identifier("Expected iterator variable in for loop")?;
+        self.consume(TokenKind::In, "Expected 'in' keyword in for loop")?;
+        let iterable = self.expression()?;
+
+        self.consume(TokenKind::LeftBrace, "Expected '{' after for loop header")?;
+
+        let mut body = Vec::new();
+        while !self.check(TokenKind::RightBrace) && !self.is_at_end() {
+            body.push(self.statement()?);
+        }
+
+        self.consume(TokenKind::RightBrace, "Expected '}' after for loop body")?;
+
+        Ok(Stmt::For {
+            iterator,
+            iterable,
+            body,
+        })
     }
 
     fn consume_if_statement(&mut self) -> Result<Stmt, ParseError> {
@@ -406,6 +467,56 @@ impl Parser {
 
     fn primary(&mut self) -> Result<Expr, ParseError> {
         match self.peek().kind {
+
+            TokenKind::ColonColon => {
+                self.advance();
+                self.consume(
+                    TokenKind::LeftBracket,
+                    "Expected '[' to consume dynamic array",
+                )?;
+
+                let start: String = self
+                    .consume(
+                        TokenKind::Number,
+                        "Expected Starting Number to create dynamic Array",
+                    )
+                    .unwrap()
+                    .lexeme;
+
+                self.consume(TokenKind::Dot, "Missing a '.' in for loop")?;
+                self.consume(TokenKind::Dot, "Missing another '.' in for loop")?;
+                let end: String = self
+                    .consume(
+                        TokenKind::Number,
+                        "Expected Starting Number to create dynamic Array",
+                    )
+                    .unwrap()
+                    .lexeme;
+
+                self.consume(
+                    TokenKind::RightBracket,
+                    "Expected ']' to consume dynamic array",
+                )?;
+
+                let _start_ = start.parse::<i128>().unwrap();
+                let _end_ = end.parse::<i128>().unwrap();
+
+                let mut values = Vec::new();
+
+                if _start_ <= _end_ {
+                    for i in _start_..=_end_ {
+                        values.push(i);
+                    }
+                } else {
+                    // descending range support
+                    for i in (_end_..=_start_).rev() {
+                        values.push(i);
+                    }
+                }
+
+                Ok(Expr::Iterable { value: values })
+            }
+
             TokenKind::False => {
                 self.advance();
                 Ok(Expr::_Literal_(Literal::Bool(false)))
@@ -479,10 +590,10 @@ impl Parser {
                 Ok(Expr::Grouping(Box::new(expr)))
             }
 
-            TokenKind::Log => {
+            TokenKind::Print => {
                 self.advance();
                 let expr = self.expression()?;
-                Ok(Expr::Log(Box::new(expr)))
+                Ok(Expr::Print(Box::new(expr)))
             }
 
             TokenKind::Identifier => self.scan_identifier(),

@@ -1,7 +1,9 @@
+use libc::geteuid;
 use std::env;
 use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
+use std::path::is_separator;
 
 mod interpreter;
 mod lexer;
@@ -76,12 +78,23 @@ fn run_ex_file(path_str: &str) {
     run_source(&source, &mut interp);
 }
 
+fn is_root() -> bool {
+    unsafe { geteuid() == 0 }
+}
+
 fn main() {
     let mut interp = Interpreter::new(); // Create interpreter once at start
 
     loop {
+        let which = if is_root() { "#" } else { "%" };
+
         match env::current_dir() {
-            Ok(path) => print!("PATH=[{}] USER=[{}]% ", path.display(), whoami::username()),
+            Ok(path) => print!(
+                "PATH=[{}] USER=[{}]{}",
+                path.display(),
+                whoami::username(),
+                which
+            ),
             Err(_) => print!("?> "),
         }
         io::stdout().flush().unwrap();

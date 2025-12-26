@@ -27,6 +27,7 @@ pub enum Value {
     Nil,
     Function(Function),
     ControlFlow(ControlFlow),
+    Array(Vec<Value>),
 }
 
 impl PartialEq for Function {
@@ -53,6 +54,7 @@ impl Value {
             Value::Char(_) => true,
             Value::Function(_) => true,
             Value::ControlFlow(_) => true,
+            Value::Array(arr) => arr.len() > 0,
         }
     }
 
@@ -67,6 +69,7 @@ impl Value {
             Value::Nil => "Nil",
             Value::Function(_) => "Function",
             Value::ControlFlow(_) => "ControlFlow",
+            Value::Array(_) => "Array",
         }
     }
 }

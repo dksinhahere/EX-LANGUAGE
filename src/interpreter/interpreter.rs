@@ -137,9 +137,11 @@ impl Interpreter {
                 match target_value {
                     Value::ControlFlow(ctrl) => {
                         // Execute the control flow label's body
+                        self.environment.push_scope();
                         for stmt in &ctrl.body {
                             self.execute(stmt)?;
                         }
+                        self.environment.pop_scope();
                         Ok(())
                     }
                     _ => Err(RuntimeError::custom(format!(
@@ -153,6 +155,79 @@ impl Interpreter {
                 // Do nothing - pass statement
                 Ok(())
             }
+
+            Stmt::For {
+                iterator,
+                iterable,
+                body,
+            } => {
+                // Evaluate iterable expression
+                let iter_val = self.eval(iterable)?;
+
+                match iter_val {
+                    Value::Array(items) => {
+                        // For-loop runs in its own scope (optional but clean)
+                        self.environment.push_scope();
+
+                        for item in items {
+                            // Each iteration can get its own nested scope (optional).
+                            // If you want iterator variable to be updated in same scope, remove this push/pop.
+                            self.environment.push_scope();
+
+                            // Bind iterator variable
+                            self.environment.define(iterator, item)?;
+
+                            // Execute body
+                            for stmt in body {
+                                self.execute(stmt)?;
+                            }
+
+                            self.environment.pop_scope();
+                        }
+
+                        self.environment.pop_scope();
+                        Ok(())
+                    }
+
+                    _ => Err(RuntimeError::custom(format!(
+                        "For-loop expects an Array iterable, got {}",
+                        iter_val.type_name()
+                    ))),
+                }
+            }
+
+            Stmt::While { condition, body } => {
+                // Keep looping while condition is truthy
+                while self.eval(condition)?.truthy() {
+                    self.environment.push_scope();
+
+                    for stmt in body {
+                        self.execute(stmt)?;
+                    }
+
+                    self.environment.pop_scope();
+                }
+                Ok(())
+            }
+
+            Stmt::DoWhile { body, condition } => {
+                // Execute body at least once
+                loop {
+                    self.environment.push_scope();
+
+                    for stmt in body {
+                        self.execute(stmt)?;
+                    }
+
+                    self.environment.pop_scope();
+
+                    // Check condition after executing body
+                    if !self.eval(condition)?.truthy() {
+                        break;
+                    }
+                }
+                Ok(())
+            }
         }
     }
 
@@ -161,6 +236,14 @@ impl Interpreter {
             Expr::_Literal_(lit) => Ok(self.literal_to_value(lit)),
 
             Expr::Grouping(inner) => self.eval(inner),
+
+            Expr::Iterable { value } => {
+                let mut out = Vec::new();
+                for e in value {
+                    out.push(Value::Int(*e));
+                }
+                Ok(Value::Array(out))
+            }
 
             Expr::Unary { operator, right } => {
                 let value = self.eval(right)?;
@@ -243,7 +326,7 @@ impl Interpreter {
 
             Expr::Variable { name } => self.environment.get(name),
 
-            Expr::Log(expr) => {
+            Expr::Print(expr) => {
                 let value = self.eval(expr)?;
                 match value {
                     Value::BigInt(bi) => println!("{}", bi),

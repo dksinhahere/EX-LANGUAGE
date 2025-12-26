@@ -1,25 +1,25 @@
 use crate::lexer::Token;
 
-#[derive(Debug, Clone)] 
+#[derive(Debug, Clone)]
 pub enum Stmt {
     Expression(Expr),
-    SmartLock{
-        variable:String
+    SmartLock {
+        variable: String,
     },
-    SmartUnlock{
-        variable:String
+    SmartUnlock {
+        variable: String,
     },
-    SmartKill{
-        variable:String
+    SmartKill {
+        variable: String,
     },
-    SmartRevive{
-        variable:String
+    SmartRevive {
+        variable: String,
     },
-    SmartConst{
-        variable:String
+    SmartConst {
+        variable: String,
     },
     Label {
-        _label_: Vec<(String, bool, Vec<String>, Vec<String>, Vec<Stmt>)>
+        _label_: Vec<(String, bool, Vec<String>, Vec<String>, Vec<Stmt>)>,
     },
     If {
         condition: Expr,
@@ -28,12 +28,23 @@ pub enum Stmt {
         else_branch: Option<Vec<Stmt>>,
     },
     Jump {
-        jump:String
+        jump: String,
     },
     Pass,
-    
+    While {
+        condition: Expr,
+        body: Vec<Stmt>,
+    },
+    DoWhile {
+        body: Vec<Stmt>,
+        condition: Expr,
+    },
+    For {
+        iterator: String,
+        iterable: Expr,
+        body: Vec<Stmt>,
+    },
 }
-
 
 #[derive(Debug, Clone)]
 pub enum Expr {
@@ -48,17 +59,21 @@ pub enum Expr {
     },
     _Literal_(Literal),
     Grouping(Box<Expr>),
-    Log(Box<Expr>),
-    Variable{
-        name:String
+    Print(Box<Expr>),
+    Variable {
+        name: String,
     },
     FunctionCall {
-        function:String,
-        args: Vec<(String, Expr)>
+        function: String,
+        args: Vec<(String, Expr)>,
     },
-    AllocateVariable{
-        name:String,
-        val:Box<Expr>
+    AllocateVariable {
+        name: String,
+        val: Box<Expr>,
+    },
+
+    Iterable {
+        value: Vec<i128>,
     },
 }
 
@@ -70,7 +85,5 @@ pub enum Literal {
     String(String),
     Bool(bool),
     Char(char),
-    Nil
+    Nil,
 }
-
-

@@ -618,7 +618,7 @@ impl Lexer {
             "_lsh_" => (TokenKind::BLShift, None),
             "_rsh_" => (TokenKind::BRShift, None),
 
-            "log" => (TokenKind::Log, None),
+            "print" => (TokenKind::Print, None),
 
             "_lock_" => (TokenKind::VLock, None),
             "_unlock_" => (TokenKind::VUnlock, None),
@@ -632,6 +632,11 @@ impl Lexer {
             "else" => (TokenKind::Else, None),
             "elif" => (TokenKind::Elif, None),
             "pass" => (TokenKind::Pass, None),
+
+            "for" => (TokenKind::For, None),
+            "while" => (TokenKind::While, None),
+            "do" => (TokenKind::Do, None),
+            "_in_" => (TokenKind::In, None),
 
             _ => (
                 TokenKind::Identifier,

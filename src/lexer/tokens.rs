@@ -66,7 +66,7 @@ pub enum TokenKind {
     Char,
     Nil,
 
-    Log,
+    Print,
     Eof,
     False,
     True,
@@ -81,7 +81,12 @@ pub enum TokenKind {
     If,
     Else,
     Elif,
-    Pass
+    Pass,
+    Do,
+    While,
+    For,
+    Tilde,
+    In
 }
 
 #[derive(Debug, Clone, PartialEq)]
