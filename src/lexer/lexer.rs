@@ -636,7 +636,15 @@ impl Lexer {
             "for" => (TokenKind::For, None),
             "while" => (TokenKind::While, None),
             "do" => (TokenKind::Do, None),
+
+            "visit" => (TokenKind::Visit, None),
+            "visible" => (TokenKind::Visible, None),
+
             "_in_" => (TokenKind::In, None),
+            "_define_"=> (TokenKind::DEFINE, None),
+            "_ifndef_" => (TokenKind::IFNDEF, None),
+            "_endif_" => (TokenKind::ENDIF, None),
+            "_undef_" => (TokenKind::UNDEF, None),
 
             _ => (
                 TokenKind::Identifier,

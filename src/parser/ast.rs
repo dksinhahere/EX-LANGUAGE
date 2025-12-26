@@ -19,7 +19,11 @@ pub enum Stmt {
         variable: String,
     },
     Label {
-        _label_: Vec<(String, bool, Vec<String>, Vec<String>, Vec<Stmt>)>,
+        _label_: Vec<(String, bool, Vec<String>, Vec<String>, Vec<String>, Vec<Stmt>)>,
+    },
+    Visible {
+        _name_:String,
+        _block_: Vec<(String, Expr)>
     },
     If {
         condition: Expr,

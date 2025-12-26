@@ -136,9 +136,45 @@ impl Parser {
             TokenKind::Do => self.do_while_loop(),
 
             TokenKind::While => self.while_loop(),
+
+            TokenKind::Visible => self.def_visible_block(),
+
             _ => self.expression_statement(),
         }
     }
+
+    fn def_visible_block(&mut self) -> Result<Stmt, ParseError> {
+        self.advance();
+        let name: String = self.consume_identifier("Expected visible block name")?;
+        self.consume(
+            TokenKind::LeftParen,
+            "Expected '(' to enclose visible block",
+        )?;
+
+        let mut block: Vec<(String, Expr)> = Vec::new();
+
+        while !self.check(TokenKind::RightParen) {
+
+            let identifier = self.consume_identifier("Expected 'Identifier' as variable name")?;
+            self.consume(TokenKind::Equal, "Expected '=' after variable name")?;
+            let value: Expr = self.expression()?;
+            block.push((identifier, value));
+
+            if self.matches(&[TokenKind::Comma]) {
+                continue;
+            }
+            break;
+        }
+        self.consume(
+            TokenKind::RightParen,
+            "Expected '(' to enclose visible block",
+        )?;
+        Ok(Stmt::Visible {
+            _name_: name,
+            _block_: block,
+        })
+    }
+
 
     fn while_loop(&mut self) -> Result<Stmt, ParseError> {
         self.advance(); // consume 'while'
@@ -256,9 +292,16 @@ impl Parser {
     }
 
     fn consume_label(&mut self) -> Result<Stmt, ParseError> {
-        let mut label: Vec<(String, bool, Vec<String>, Vec<String>, Vec<Stmt>)> = Vec::new();
+        let mut label: Vec<(
+            String,
+            bool,
+            Vec<String>,
+            Vec<String>,
+            Vec<String>,
+            Vec<Stmt>,
+        )> = Vec::new();
 
-        let mut callable: bool;
+        let callable: bool;
 
         if self.check(TokenKind::At) {
             callable = false; // Control flow label (has @)
@@ -268,9 +311,27 @@ impl Parser {
 
         if callable {
             // Get label name
+            let mut visit: Vec<String> = Vec::new();
+            self.consume(TokenKind::Visit, "Expected 'visit' keyword after label")?;
+            self.consume(
+                TokenKind::LeftBracket,
+                "Expected '[' to eclose Left Barcket",
+            )?;
+            while !self.check(TokenKind::RightBracket) {
+                visit.push(
+                    self.consume_identifier("Expected 'identifier for visible block'")
+                        .unwrap(),
+                );
+                if self.matches(&[TokenKind::Comma]) {
+                    continue;
+                }
+                break;
+            }
+            self.consume(
+                TokenKind::RightBracket,
+                "Expected ']' to enclose function visit",
+            )?;
             let name = self.consume_identifier("Expected label name")?;
-
-            // Parse parameters
             self.consume(TokenKind::LeftParen, "Expected '(' after label name")?;
 
             let mut params: Vec<String> = Vec::new(); // External parameter names
@@ -301,7 +362,7 @@ impl Parser {
 
             self.consume(TokenKind::RightBrace, "Expected '}' after label body")?;
 
-            label.push((name, callable, params, internal_names, body));
+            label.push((name, callable, visit, params, internal_names, body));
         } else {
             // Control flow label code...
             self.advance();
@@ -315,7 +376,7 @@ impl Parser {
 
             self.consume(TokenKind::RightBrace, "Expected '}' after label body")?;
 
-            label.push((name, callable, vec![], vec![], body));
+            label.push((name, callable, vec![], vec![], vec![], body));
         }
 
         Ok(Stmt::Label { _label_: label })
@@ -467,7 +528,6 @@ impl Parser {
 
     fn primary(&mut self) -> Result<Expr, ParseError> {
         match self.peek().kind {
-
             TokenKind::ColonColon => {
                 self.advance();
                 self.consume(

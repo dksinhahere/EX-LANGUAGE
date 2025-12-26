@@ -1,7 +1,10 @@
 
+visible some {
+    money = 55
+    fabchar = 'C'
+}
 
-
-label greeting(name=uname, age=uage) {
+label greeting(name=uname, age=uage) visit[some] {
     kprint uname + " How are You, " + uage
 
     label some(src=data) {
@@ -9,6 +12,8 @@ label greeting(name=uname, age=uage) {
     }
 
     some(src="Hello, Suar")
+
+    kprint(some->money)
 }
 
 greeting(name="Danishk", age="23")

@@ -1,6 +1,7 @@
 use std::fmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum TokenKind {
     // Single-character tokens
     LeftParen,
@@ -85,8 +86,14 @@ pub enum TokenKind {
     Do,
     While,
     For,
-    Tilde,
-    In
+    In,
+    DEFINE,
+    IFNDEF,
+    ENDIF,
+    UNDEF,
+    Visit,
+    Visible,
+
 }
 
 #[derive(Debug, Clone, PartialEq)]

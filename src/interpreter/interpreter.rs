@@ -7,12 +7,24 @@ use std::collections::HashMap;
 #[derive(Debug)]
 pub struct Interpreter {
     pub environment: Environment,
+    // Map: visible_block_name -> HashMap<var_name, Value>
+    visible: HashMap<String, HashMap<String, Value>>,
+    // Track which visible blocks have been initialized
+    initialized_visible: HashMap<String, bool>,
+    // Store the initialization expressions for visible blocks
+    visible_definitions: HashMap<String, Vec<(String, Expr)>>,
+    // Track the current function context (to enforce visible block access)
+    current_function_context: Option<Vec<String>>, // Current function's allowed visible blocks
 }
 
 impl Interpreter {
     pub fn new() -> Self {
         Self {
             environment: Environment::new(),
+            visible: HashMap::new(),
+            initialized_visible: HashMap::new(),
+            visible_definitions: HashMap::new(),
+            current_function_context: None,
         }
     }
 
@@ -106,9 +118,10 @@ impl Interpreter {
                 for label_item in _label_ {
                     let label_name = label_item.0.clone();
                     let is_callable = label_item.1;
-                    let params = label_item.2.clone();
-                    let args = label_item.3.clone();
-                    let body = label_item.4.clone();
+                    let visible = label_item.2.clone();
+                    let params = label_item.3.clone();
+                    let args = label_item.4.clone();
+                    let body = label_item.5.clone();
 
                     if is_callable {
                         // Store callable label as function in environment
@@ -117,6 +130,7 @@ impl Interpreter {
                             params,
                             defaults: args,
                             body,
+                            visible_blocks: visible,
                         });
                         self.environment.define(&label_name, func)?;
                     } else {
@@ -228,6 +242,22 @@ impl Interpreter {
                 }
                 Ok(())
             }
+
+            Stmt::Visible { _name_, _block_ } => {
+                // Visible blocks are NOT executed in global scope
+                // They are only DEFINED here and will be initialized
+                // when a function with permission first accesses them
+
+                // Store the definition for later initialization
+                self.visible_definitions
+                    .insert(_name_.clone(), _block_.clone());
+
+                // Mark as defined but not initialized
+                self.visible.insert(_name_.clone(), HashMap::new());
+                self.initialized_visible.insert(_name_.clone(), false);
+
+                Ok(())
+            }
         }
     }
 
@@ -324,7 +354,30 @@ impl Interpreter {
                 Ok(Value::Nil)
             }
 
-            Expr::Variable { name } => self.environment.get(name),
+            #[allow(clippy::collapsible_if)]
+            Expr::Variable { name } => {
+                // Check if variable exists in environment
+                if self.environment.exists(name) {
+                    return self.environment.get(name);
+                }
+
+                // Check if it's a visible block variable
+                // Only allow access if we're in a function context with permission
+                if let Some(allowed_blocks) = &self.current_function_context {
+                    // We're inside a function - check if this variable is from an allowed visible block
+                    for block_name in allowed_blocks {
+                        if let Some(variables) = self.visible.get(block_name) {
+                            if let Some(value) = variables.get(name) {
+                                // Variable found in an allowed visible block
+                                return Ok(value.clone());
+                            }
+                        }
+                    }
+                }
+
+                // Variable not found or not accessible
+                Err(RuntimeError::undefined_variable(name))
+            }
 
             Expr::Print(expr) => {
                 let value = self.eval(expr)?;
@@ -349,8 +402,71 @@ impl Interpreter {
 
                 match func_value {
                     Value::Function(func) => {
+                        // === INITIALIZE VISIBLE BLOCKS FOR THIS FUNCTION ===
+                        // Check if this function has access to any visible blocks
+                        for visible_block_name in &func.visible_blocks {
+                            // Check if the visible block exists
+                            if !self.visible.contains_key(visible_block_name) {
+                                return Err(RuntimeError::custom(format!(
+                                    "Function '{}' references undefined visible block '{}'",
+                                    function, visible_block_name
+                                )));
+                            }
+
+                            // Initialize the visible block on FIRST access
+                            let is_initialized = self
+                                .initialized_visible
+                                .get(visible_block_name)
+                                .copied()
+                                .unwrap_or(false);
+
+                            if !is_initialized {
+                                // Clone the definition to avoid borrow checker issues
+                                let block_def =
+                                    self.visible_definitions.get(visible_block_name).cloned();
+
+                                if let Some(block_def) = block_def {
+                                    // Create a temporary scope to evaluate the initialization expressions
+                                    self.environment.push_scope();
+
+                                    let mut value_map: HashMap<String, Value> = HashMap::new();
+
+                                    for (var_name, var_expr) in &block_def {
+                                        let value = self.eval(var_expr)?;
+                                        value_map.insert(var_name.clone(), value);
+                                    }
+
+                                    self.environment.pop_scope();
+
+                                    // Store the initialized values
+                                    self.visible.insert(visible_block_name.clone(), value_map);
+                                    self.initialized_visible
+                                        .insert(visible_block_name.clone(), true);
+                                } else {
+                                    return Err(RuntimeError::custom(format!(
+                                        "Visible block '{}' is declared but has no definition",
+                                        visible_block_name
+                                    )));
+                                }
+                            }
+                        }
+
+                        // Set the current function context (for access control)
+                        let previous_context = self.current_function_context.clone();
+                        self.current_function_context = Some(func.visible_blocks.clone());
+
                         // Create new scope for function execution
                         self.environment.push_scope();
+
+                        // Inject visible block variables into the function scope
+                        for visible_block_name in &func.visible_blocks {
+                            if let Some(variables) = self.visible.get(visible_block_name) {
+                                for (var_name, value) in variables {
+                                    // Define these variables in the function scope
+                                    self.environment.define(var_name, value.clone())?;
+                                }
+                            }
+                        }
 
                         // Build argument map from call-site arguments
                         let mut arg_map: HashMap<String, Value> = HashMap::new();
@@ -360,9 +476,6 @@ impl Interpreter {
                         }
 
                         // Map external parameter names to internal variable names
-                        // params: ["name", "age"] - external names used in call
-                        // defaults: ["uname", "uage"] - internal names used in function body
-                        
                         for (i, external_param) in func.params.iter().enumerate() {
                             let internal_name = &func.defaults[i];
 
@@ -372,8 +485,9 @@ impl Interpreter {
                             } else {
                                 // Missing required parameter
                                 self.environment.pop_scope();
+                                self.current_function_context = previous_context;
                                 return Err(RuntimeError::custom(format!(
-                                    "Missing required parameter '{}' in function '{}' according to arguments",
+                                    "Missing required parameter '{}' in function '{}'",
                                     external_param, function
                                 )));
                             }
@@ -384,8 +498,22 @@ impl Interpreter {
                             self.execute(stmt)?;
                         }
 
-                        // Pop scope
+                        // IMPORTANT: Save back any modifications to visible block variables
+                        // before popping the scope
+                        for visible_block_name in &func.visible_blocks {
+                            if let Some(variables) = self.visible.get_mut(visible_block_name) {
+                                for (var_name, _) in variables.clone() {
+                                    // Get the potentially modified value from the environment
+                                    if let Ok(new_value) = self.environment.get(&var_name) {
+                                        variables.insert(var_name, new_value);
+                                    }
+                                }
+                            }
+                        }
+
+                        // Pop scope and restore previous context
                         self.environment.pop_scope();
+                        self.current_function_context = previous_context;
 
                         Ok(Value::Nil)
                     }

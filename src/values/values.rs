@@ -8,6 +8,7 @@ pub struct Function {
     pub params: Vec<String>,
     pub defaults: Vec<String>,
     pub body: Vec<Stmt>,
+    pub visible_blocks: Vec<String>, // Names of visible blocks this function can access
 }
 
 #[derive(Debug, Clone)]
@@ -54,7 +55,7 @@ impl Value {
             Value::Char(_) => true,
             Value::Function(_) => true,
             Value::ControlFlow(_) => true,
-            Value::Array(arr) => arr.len() > 0,
+            Value::Array(arr) => !arr.is_empty(),
         }
     }
 
