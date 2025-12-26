@@ -1,89 +1,21 @@
 use libc::geteuid;
 use std::env;
-use std::fs;
 use std::io::{self, Write};
-use std::path::Path;
-use std::path::is_separator;
 
 mod interpreter;
 mod lexer;
+mod local;
 mod parser;
 mod values;
 
-use crate::interpreter::Interpreter;
-use crate::lexer::Lexer;
-use crate::parser::Parser;
-
-fn run_source(source: &str, interp: &mut Interpreter) {
-    // Pass interpreter as parameter
-    // 1) Lex
-    let tokens = match Lexer::new(source.to_string()).scan_tokens() {
-        Ok(t) => t,
-        Err(e) => {
-            e.display(source);
-            return;
-        }
-    };
-
-    // 2) Parse
-    let mut parser = Parser::new(tokens);
-    let statements = match parser.parse() {
-        Ok(stmts) => stmts,
-        Err(errors) => {
-            for err in errors {
-                eprintln!(
-                    "[line {}] Error at '{}': {}",
-                    err.token.line, err.token.lexeme, err.message
-                );
-            }
-            return;
-        }
-    };
-
-    // 3) Interpret
-    if let Err(e) = interp.interpret(&statements) {
-        eprintln!("Runtime error: {e}");
-    }
-}
-
-fn run_ex_file(path_str: &str) {
-    let path = Path::new(path_str);
-
-    // check exists
-    if !path.exists() {
-        eprintln!("File not found: {}", path_str);
-        return;
-    }
-
-    // check extension .ex
-    match path.extension().and_then(|e| e.to_str()) {
-        Some("ex") => {}
-        _ => {
-            eprintln!("exsh only supports .ex files. Got: {}", path_str);
-            return;
-        }
-    }
-
-    // read file
-    let source = match fs::read_to_string(path) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("Error reading file {}: {}", path_str, e);
-            return;
-        }
-    };
-
-    // Create new interpreter for file execution
-    let mut interp = Interpreter::new();
-    run_source(&source, &mut interp);
-}
+use crate::local::{CommandInterpreter, Lexer as LocalLexer, Parser as LocalParser};
 
 fn is_root() -> bool {
     unsafe { geteuid() == 0 }
 }
 
 fn main() {
-    let mut interp = Interpreter::new(); // Create interpreter once at start
+    let mut cmd_interp = CommandInterpreter::new();
 
     loop {
         let which = if is_root() { "#" } else { "%" };
@@ -99,78 +31,33 @@ fn main() {
         }
         io::stdout().flush().unwrap();
 
-        let mut input: String = String::new();
+        let mut input = String::new();
         match io::stdin().read_line(&mut input) {
             Ok(_) => {
                 let input = input.trim();
-                if input == "exit" {
-                    break;
+
+                if input.is_empty() {
+                    continue;
                 }
 
-                let mut parts = input.split_whitespace();
-                match parts.next() {
-                    Some("chd") => {
-                        if let Some(dir) = parts.next() {
-                            if let Err(e) = env::set_current_dir(dir) {
-                                eprintln!("Error changing directory: {}", e);
-                            }
-                        } else {
-                            eprintln!("No directory specified");
-                        }
-                    }
-                    Some("cud") => match env::current_dir() {
-                        Ok(path) => println!("{}", path.display()),
-                        Err(e) => eprintln!("Error getting current directory: {}", e),
-                    },
-                    Some("clean") => {
-                        print!("\x1B[2J\x1B[1;1H");
-                    }
-                    Some(">>") => {
-                        let command: String = parts.collect::<Vec<&str>>().join(" ");
-                        if !command.is_empty() {
-                            run_source(&command, &mut interp); // Pass the persistent interpreter
-                        }
-                    }
+                // Tokenize input
+                let mut lexer = LocalLexer::new(input.to_string());
+                let tokens = lexer.tokenize();
 
-                    #[warn(clippy::manual_strip)]
-                    Some(cmd) => {
-                        if cmd.starts_with("./") {
-                            let file_path = &cmd[2..]; // Remove "./"
-                            let path = Path::new(file_path);
-
-                            // Check if it's a .ex file
-                            if path.extension().and_then(|s| s.to_str()) == Some("ex") {
-                                run_ex_file(file_path);
-                            } else {
-                                // Try to execute as a local binary/script
-                                use std::process::Command;
-                                let args: Vec<&str> = parts.collect();
-                                match Command::new(cmd).args(&args).status() {
-                                    Ok(status) => {
-                                        if !status.success() {
-                                            eprintln!("Process exited with status: {}", status);
-                                        }
-                                    }
-                                    Err(e) => eprintln!("Failed to execute {}: {}", cmd, e),
-                                }
-                            }
-                        } else {
-                            // Try to execute as a system command (without ./)
-                            use std::process::Command;
-                            let args: Vec<&str> = parts.collect();
-                            match Command::new(cmd).args(&args).status() {
-                                Ok(status) => {
-                                    if !status.success() {
-                                        eprintln!("Process exited with status: {}", status);
-                                    }
-                                }
-                                Err(e) => {
-                                    eprintln!("Unknown command or failed to execute: {}", cmd)
-                                }
-                            }
-                        }
+                // Parse tokens into command
+                let mut parser = LocalParser::new(tokens);
+                let command = match parser.parse() {
+                    Ok(cmd) => cmd,
+                    Err(e) => {
+                        eprintln!("Parse error: {}", e);
+                        continue;
                     }
-                    None => {}
+                };
+
+                // Execute command
+                match cmd_interp.execute(command) {
+                    local::interpreter::ExecutionResult::Exit => break,
+                    local::interpreter::ExecutionResult::Continue => {}
                 }
             }
             Err(e) => {
