@@ -1,23 +1,39 @@
 use std::collections::HashMap;
+use crate::interpreter::error::{RuntimeError, RuntimeResult, RuntimeErrorKind};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
-    Null,
-    Bool(bool),
-    Number(f64),
+    Int(i128),
+    Float(f64),
+    BigInt(String),
     String(String),
+    Bool(bool),
     Char(char),
+    Nil
 }
 
 impl Value {
-    /// Returns true if the value is "truthy" (follows JS-like rules)
     pub fn truthy(&self) -> bool {
         match self {
-            Value::Null => false,
+            Value::Nil => false,
             Value::Bool(b) => *b,
-            Value::Number(n) => *n != 0.0 && !n.is_nan(),
+            Value::Int(i) => *i != 0,
+            Value::Float(n) => *n != 0.0 && !n.is_nan(),
+            Value::BigInt(s) => s != "0" && !s.is_empty(),
             Value::String(s) => !s.is_empty(),
             Value::Char(_) => true,
+        }
+    }
+
+    pub fn type_name(&self) -> &str {
+        match self {
+            Value::Int(_) => "Int",
+            Value::Float(_) => "Float",
+            Value::BigInt(_) => "BigInt",
+            Value::String(_) => "String",
+            Value::Bool(_) => "Bool",
+            Value::Char(_) => "Char",
+            Value::Nil => "Nil",
         }
     }
 }
@@ -26,6 +42,7 @@ impl Value {
 struct Binding {
     value: Value,
     is_constant: bool,
+    smart_lock: bool,
 }
 
 #[derive(Debug)]
@@ -40,62 +57,137 @@ impl Environment {
         }
     }
 
-    /// Define a new mutable variable in the current scope
-    pub fn define(&mut self, name: &str, value: Value) {
-        if let Some(scope) = self.scopes.last_mut() {
-            scope.insert(
-                name.to_string(),
-                Binding {
-                    value,
-                    is_constant: false,
-                },
-            );
-        }
-    }
-
-    /// Define a new constant variable in the current scope
-    pub fn define_constant(&mut self, name: &str, value: Value) {
-        if let Some(scope) = self.scopes.last_mut() {
-            scope.insert(
-                name.to_string(),
-                Binding {
-                    value,
-                    is_constant: true,
-                },
-            );
-        }
-    }
-
-    /// Get a variable's value (searches from innermost to outermost scope)
-    pub fn get(&self, name: &str) -> Option<Value> {
+    pub fn exists(&self, name: &str) -> bool {
         for scope in self.scopes.iter().rev() {
-            if let Some(binding) = scope.get(name) {
-                return Some(binding.value.clone());
-            }
-        }
-        None
-    }
-
-    
-    pub fn assign(&mut self, name: &str, value: Value) -> bool {
-        for scope in self.scopes.iter_mut().rev() {
-            if let Some(binding) = scope.get_mut(name) {
-                if binding.is_constant {
-                    return false; // Cannot reassign constant
-                }
-                binding.value = value;
+            if scope.contains_key(name) {
                 return true;
             }
         }
         false
     }
 
-    /// Push a new scope (for blocks, functions, etc.)
+    #[allow(clippy::collapsible_if)]
+    pub fn define(&mut self, name: &str, value: Value) -> RuntimeResult<()> {
+        if let Some(scope) = self.scopes.last() {
+            if let Some(binding) = scope.get(name) {
+                if binding.is_constant {
+                    return Err(RuntimeError::cannot_redefine_constant(name));
+                }
+                if binding.smart_lock {
+                    return Err(RuntimeError::cannot_redefine_smart_locked(name));
+                }
+            }
+        }
+
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.insert(
+                name.to_string(),
+                Binding {
+                    value,
+                    is_constant: false,
+                    smart_lock: false,
+                },
+            );
+        }
+        
+        Ok(())
+    }
+
+    #[allow(clippy::collapsible_if)]
+    pub fn define_constant(&mut self, name: &str, value: Value) -> RuntimeResult<()> {
+        if let Some(scope) = self.scopes.last() {
+            if scope.contains_key(name) {
+                return Err(RuntimeError::custom(format!(
+                    "Cannot redefine existing variable '{}' as constant", name
+                )));
+            }
+        }
+
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.insert(
+                name.to_string(),
+                Binding {
+                    value,
+                    is_constant: true,
+                    smart_lock: false,
+                },
+            );
+        }
+        
+        Ok(())
+    }
+
+    #[allow(clippy::collapsible_if)]
+    pub fn define_smart_lock(&mut self, name: &str, value: Value) -> RuntimeResult<()> {
+        if let Some(scope) = self.scopes.last() {
+            if scope.contains_key(name) {
+                return Err(RuntimeError::custom(format!(
+                    "Cannot redefine existing variable '{}' as smart-locked", name
+                )));
+            }
+        }
+
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.insert(
+                name.to_string(),
+                Binding {
+                    value,
+                    is_constant: false,
+                    smart_lock: true,
+                },
+            );
+        }
+        
+        Ok(())
+    }
+
+    pub fn get(&self, name: &str) -> RuntimeResult<Value> {
+        for scope in self.scopes.iter().rev() {
+            if let Some(binding) = scope.get(name) {
+                return Ok(binding.value.clone());
+            }
+        }
+        Err(RuntimeError::undefined_variable(name))
+    }
+
+    pub fn assign(&mut self, name: &str, value: Value) -> RuntimeResult<()> {
+        for scope in self.scopes.iter_mut().rev() {
+            if let Some(binding) = scope.get_mut(name) {
+                if binding.is_constant {
+                    return Err(RuntimeError::cannot_reassign_constant(name));
+                }
+                if binding.smart_lock {
+                    return Err(RuntimeError::cannot_reassign_smart_locked(name));
+                }
+                binding.value = value;
+                return Ok(());
+            }
+        }
+        Err(RuntimeError::undefined_variable(name))
+    }
+
+    pub fn delete_variable(&mut self, name: &str) -> RuntimeResult<()> {
+        for scope in self.scopes.iter_mut().rev() {
+            if let Some(binding) = scope.get(name) {
+                if binding.is_constant {
+                    return Err(RuntimeError::cannot_delete_constant(name));
+                }
+                if binding.smart_lock {
+                    return Err(RuntimeError::cannot_delete_smart_locked(name));
+                }
+                
+                scope.remove(name);
+                return Ok(());
+            }
+        }
+        
+        Err(RuntimeError::new(RuntimeErrorKind::CannotDeleteUndefined(name.to_string())))
+    }
+
     pub fn push_scope(&mut self) {
         self.scopes.push(HashMap::new());
     }
 
-    /// Pop the current scope
     pub fn pop_scope(&mut self) {
         if self.scopes.len() > 1 {
             self.scopes.pop();

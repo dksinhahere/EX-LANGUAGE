@@ -56,7 +56,41 @@ impl Parser {
     }
 
     fn statement(&mut self) -> Result<Stmt, ParseError> {
-        self.expression_statement()
+        match self.peek().kind {
+
+            TokenKind::VLock => {
+                self.advance();
+                let identifier: String = self.consume(TokenKind::Identifier, "Expected 'Identifier'").unwrap().lexeme;
+                Ok(Stmt::SmartLock {variable: identifier})
+            }
+
+            TokenKind::VUnlock => {
+                self.advance();
+                let identifier: String = self.consume(TokenKind::Identifier, "Expected 'Identifier'").unwrap().lexeme;
+                Ok(Stmt::SmartUnlock {variable: identifier})
+            }
+
+            TokenKind::VKill => {
+                self.advance();
+                let identifier: String = self.consume(TokenKind::Identifier, "Expected 'Identifier'").unwrap().lexeme;
+                Ok(Stmt::SmartKill {variable: identifier})
+            }
+            
+            TokenKind::VRevive => {
+                self.advance();
+                let identifier: String = self.consume(TokenKind::Identifier, "Expected 'Identifier'").unwrap().lexeme;
+                Ok(Stmt::SmartRevive {variable: identifier})
+            }
+
+            TokenKind::VConst => {
+                self.advance();
+                let identifier: String = self.consume(TokenKind::Identifier, "Expected 'Identifier'").unwrap().lexeme;
+                Ok(Stmt::SmartConst {variable: identifier})
+            }
+            _=> {
+                self.expression_statement()
+            }
+        }
     }
 
     fn expression_statement(&mut self) -> Result<Stmt, ParseError> {
@@ -191,12 +225,12 @@ impl Parser {
         match self.peek().kind {
             TokenKind::False => {
                 self.advance();
-                Ok(Expr::_Literal_(Literal::Boolean(false)))
+                Ok(Expr::_Literal_(Literal::Bool(false)))
             }
 
             TokenKind::True => {
                 self.advance();
-                Ok(Expr::_Literal_(Literal::Boolean(true)))
+                Ok(Expr::_Literal_(Literal::Bool(true)))
             }
 
             TokenKind::Nil => {
@@ -206,13 +240,53 @@ impl Parser {
 
             TokenKind::Number => {
                 let token = self.advance();
-                let value = token.lexeme.parse::<f64>().unwrap();
-                Ok(Expr::_Literal_(Literal::Number(value)))
+
+                // Extract number literal from token
+                let literal = if let Some(crate::lexer::Literal::Number(num_lit)) = &token.literal {
+                    match num_lit {
+                        crate::lexer::tokens::NumberLit::Int(i) => Literal::Int(*i),
+                        crate::lexer::tokens::NumberLit::Float(f) => Literal::Float(*f),
+                        crate::lexer::tokens::NumberLit::BigIntString(s) => {
+                            Literal::BigInt(s.clone())
+                        }
+                    }
+                } else {
+                    // Fallback: parse from lexeme as f64 if literal is missing
+                    let value = token
+                        .lexeme
+                        .parse::<f64>()
+                        .map_err(|_| self.error("Invalid number literal"))?;
+                    Literal::Float(value)
+                };
+
+                Ok(Expr::_Literal_(literal))
             }
 
             TokenKind::String => {
                 let token = self.advance();
-                Ok(Expr::_Literal_(Literal::String(token.lexeme)))
+
+                // Extract string literal from token
+                let value = if let Some(crate::lexer::Literal::String(s)) = &token.literal {
+                    s.clone()
+                } else {
+                    // Fallback: use lexeme (includes quotes)
+                    token.lexeme.clone()
+                };
+
+                Ok(Expr::_Literal_(Literal::String(value)))
+            }
+
+            TokenKind::Char => {
+                let token = self.advance();
+
+                // Extract char literal from token
+                let value = if let Some(crate::lexer::Literal::Char(c)) = &token.literal {
+                    *c
+                } else {
+                    return Err(self.error("Invalid character literal"));
+                };
+
+                Ok(Expr::_Literal_(Literal::Char(value)))
             }
 
             TokenKind::LeftParen => {
@@ -228,9 +302,69 @@ impl Parser {
                 Ok(Expr::Log(Box::new(expr)))
             }
 
+            TokenKind::Identifier => self.scan_identifier(),
+
             _ => Err(self.error("Expect expression")),
         }
     }
+
+    //==========================================================
+    // Grammer
+    fn scan_identifier(&mut self) -> Result<Expr, ParseError> {
+        let identifier: String = self.peek().lexeme.clone();
+        self.advance();
+
+        match self.peek().kind {
+            /*
+                Function Call
+                call(src=[34, 34])
+                call(src["Hello From", "Danishk"])
+            */
+            TokenKind::LeftParen => {
+                let mut args_map: Vec<(String, Expr)> = Vec::new();
+                self.advance();
+                while !self.check(TokenKind::RightParen) {
+                    let name: String = self
+                        .consume(
+                            TokenKind::Identifier,
+                            "Expected 'Identifier' for mapping args to parameters",
+                        )
+                        .unwrap()
+                        .lexeme;
+                    self.consume(
+                        TokenKind::Equal,
+                        "Expected '=' to differentiate name and expression",
+                    )
+                    .unwrap();
+                    let value: Expr = self.expression()?;
+                    args_map.push((name, value));
+
+                    if self.check(TokenKind::Comma) {
+                        self.advance(); // ',' skip
+                    } else {
+                        break;
+                    }
+                }
+                self.consume(
+                    TokenKind::RightParen,
+                    "Expected ')' to enclose function call",
+                ).unwrap();
+                Ok(Expr::FunctionCall { args: args_map })
+            }
+
+            TokenKind::Equal => {
+                self.advance();
+                let value: Expr = self.expression()?;
+                Ok(Expr::AllocateVariable {
+                    name: identifier,
+                    val: Box::new(value),
+                })
+            }
+
+            _ => Ok(Expr::Variable { name: identifier }),
+        }
+    }
+    //==========================================================
 
     // =========================================================
     // Cursor utilities

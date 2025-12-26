@@ -46,38 +46,13 @@ pub enum TokenKind {
     Elif,
     Or,
     Else,
-    Jump,
-    Unlabel,
-    VisibleSoft,
-    VisibleHard,
-    Visibility,
-    Struct,
     Return,
-
-    // variable classes
-    Define,
-    Rooted,
-    Eternal,
-
-    // Structure Classes
-    Private,
-    Public,
-    SelfKw,
-    Constructor,
-    New,
-
-    // macros
-    DefineMacro, // _define_
-    IfDef,
-    IfNDef,
-    UnDef,
 
     // switch/enum
     Enum,
     Switch,
     Case,
     Default,
-    SHIF, // choose
 
     // bit op keywords
     BitAnd,  // _and_
@@ -87,23 +62,11 @@ pub enum TokenKind {
     BLShift, // _lsh_
     BRShift, // _rsh_
 
-    // extra keywords from your JS
-    _DEF_,
-    Def,
-    Gen,
-    _TTV_,
-    _DELOCK_,
-    Kill,
-    Lock,
-    Unlock,
-    Revive,
-    IsAlive,
-
     // Literals / value-kinds
     Identifier,
     Number,
     String,
-    Bool,
+
     Char,
     Nil,
 
@@ -111,6 +74,12 @@ pub enum TokenKind {
     Eof,
     False,
     True,
+
+    VLock,
+    VUnlock,
+    VKill,
+    VRevive,
+    VConst,
 
 }
 

@@ -1,6 +1,7 @@
 use crate::lexer::TokenKind;
 use crate::parser::ast::{Expr, Literal, Stmt};
-use crate::values::{Environment, Value};
+use crate::values::values::{Environment, Value};
+use crate::interpreter::error::{RuntimeError, RuntimeResult, RuntimeErrorKind};
 
 #[derive(Debug)]
 pub struct Interpreter {
@@ -8,154 +9,158 @@ pub struct Interpreter {
 }
 
 impl Interpreter {
-    // =========================================================
-    // Constructor
-    // =========================================================
-
     pub fn new() -> Self {
         Self {
             environment: Environment::new(),
         }
     }
 
-    // =========================================================
-    // Entry point
-    // =========================================================
-
-    pub fn interpret(&mut self, statements: &[Stmt]) -> Result<(), String> {
+    pub fn interpret(&mut self, statements: &[Stmt]) -> RuntimeResult<()> {
         for stmt in statements {
             self.execute(stmt)?;
         }
         Ok(())
     }
 
-    // =========================================================
-    // Statements
-    // =========================================================
-
-    fn execute(&mut self, stmt: &Stmt) -> Result<(), String> {
+    fn execute(&mut self, stmt: &Stmt) -> RuntimeResult<()> {
         match stmt {
             Stmt::Expression(expr) => {
                 let _ = self.eval(expr)?;
                 Ok(())
             }
+            Stmt::SmartLock { variable } => {
+                let value = self.environment.get(variable)?;
+                self.environment.define_smart_lock(variable, value)?;
+                Ok(())
+            }
+            Stmt::SmartUnlock { variable } => {
+                let value = self.environment.get(variable)?;
+                self.environment.define(variable, value)?;
+                Ok(())
+            }
+            Stmt::SmartKill { variable } => {
+                self.environment.delete_variable(variable)?;
+                Ok(())
+            }
+            Stmt::SmartRevive { variable } => {
+                self.environment.define(variable, Value::Nil)?;
+                Ok(())
+            }
+            Stmt::SmartConst { variable } => {
+                let value = self.environment.get(variable)?;
+                self.environment.define_constant(variable, value)?;
+                Ok(())
+            }
         }
     }
 
-    // =========================================================
-    // Expressions
-    // =========================================================
-
-    fn eval(&mut self, expr: &Expr) -> Result<Value, String> {
+    fn eval(&mut self, expr: &Expr) -> RuntimeResult<Value> {
         match expr {
-            // -------------------------
-            // Literals
-            // -------------------------
             Expr::_Literal_(lit) => Ok(self.literal_to_value(lit)),
-
-            // -------------------------
-            // Grouping
-            // -------------------------
+            
             Expr::Grouping(inner) => self.eval(inner),
-
-            // -------------------------
-            // Unary expressions
-            // -------------------------
+            
             Expr::Unary { operator, right } => {
                 let value = self.eval(right)?;
 
                 match operator.kind {
                     TokenKind::Minus => match value {
-                        Value::Number(n) => Ok(Value::Number(-n)),
-                        _ => Err("Unary '-' expects a number".to_string()),
+                        Value::Float(n) => Ok(Value::Float(-n)),
+                        Value::Int(n) => Ok(Value::Int(-n)),
+                        _ => Err(RuntimeError::new(RuntimeErrorKind::InvalidUnaryOperation {
+                            operator: "-".to_string(),
+                            operand_type: value.type_name().to_string(),
+                        })),
                     },
-
                     TokenKind::Bang => Ok(Value::Bool(!value.truthy())),
-
-                    _ => Err(format!("Unsupported unary operator: {:?}", operator.kind)),
+                    _ => Err(RuntimeError::custom(format!("Unsupported unary operator: {:?}", operator.kind))),
                 }
             }
-
-            // -------------------------
-            // Binary expressions
-            // -------------------------
-            Expr::Binary {
-                left,
-                operator,
-                right,
-            } => {
+            
+            Expr::Binary { left, operator, right } => {
                 let left_val = self.eval(left)?;
                 let right_val = self.eval(right)?;
 
                 match operator.kind {
-                    // Arithmetic
                     TokenKind::Plus => Self::add(left_val, right_val),
                     TokenKind::Minus => Self::num_op(left_val, right_val, |a, b| a - b, "-"),
                     TokenKind::Star => Self::num_op(left_val, right_val, |a, b| a * b, "*"),
-                    TokenKind::Slash => Self::num_op(left_val, right_val, |a, b| a / b, "/"),
-
-                    // Equality
+                    TokenKind::Slash => Self::num_op(left_val, right_val, |a, b| {
+                        if b == 0.0 {
+                            return f64::NAN;
+                        }
+                        a / b
+                    }, "/"),
                     TokenKind::EqualEqual => Ok(Value::Bool(left_val == right_val)),
                     TokenKind::BangEqual => Ok(Value::Bool(left_val != right_val)),
-
-                    // Comparison
                     TokenKind::Greater => Self::cmp(left_val, right_val, |a, b| a > b, ">"),
                     TokenKind::GreaterEqual => Self::cmp(left_val, right_val, |a, b| a >= b, ">="),
                     TokenKind::Less => Self::cmp(left_val, right_val, |a, b| a < b, "<"),
                     TokenKind::LessEqual => Self::cmp(left_val, right_val, |a, b| a <= b, "<="),
-
-                    _ => Err(format!("Unsupported binary operator: {:?}", operator.kind)),
+                    _ => Err(RuntimeError::custom(format!("Unsupported binary operator: {:?}", operator.kind))),
                 }
             }
-            Expr::Log(expr) => {
-                println!("{:?}", self.eval(expr).unwrap());
-                Ok(Value::Bool(true))
+            
+            Expr::AllocateVariable { name, val } => {
+                let val = self.eval(val)?;
+                self.environment.define(name, val)?;
+                Ok(Value::Nil)
             }
+            
+            Expr::Variable { name } => self.environment.get(name),
+            
+            Expr::Log(expr) => {
+                let value = self.eval(expr)?;
+                println!("{:?}", value);
+                Ok(Value::Nil)
+            }
+            
+            _ => Err(RuntimeError::custom("Unsupported expression")),
         }
     }
 
-    // =========================================================
-    // Helpers
-    // =========================================================
-
-    fn literal_to_value(&self, literal: &Literal) -> Value {
-        match literal {
-            Literal::Number(n) => Value::Number(*n),
+    fn literal_to_value(&self, lit: &Literal) -> Value {
+        match lit {
+            Literal::Int(i) => Value::Int(*i),
+            Literal::Float(f) => Value::Float(*f),
+            Literal::BigInt(s) => Value::BigInt(s.clone()),
             Literal::String(s) => Value::String(s.clone()),
-            Literal::Boolean(b) => Value::Bool(*b),
-            Literal::Nil => Value::Null,
+            Literal::Bool(b) => Value::Bool(*b),
+            Literal::Char(c) => Value::Char(*c),
+            Literal::Nil => Value::Nil,
         }
     }
 
-    fn add(left: Value, right: Value) -> Result<Value, String> {
-        match (left, right) {
-            (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a + b)),
-            (Value::String(a), Value::String(b)) => Ok(Value::String(format!("{a}{b}"))),
-            _ => Err("Operator '+' expects numbers or strings".to_string()),
+    fn add(left: Value, right: Value) -> RuntimeResult<Value> {
+        match (&left, &right) {
+            (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a + b)),
+            (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a + b)),
+            (Value::Int(a), Value::Float(b)) => Ok(Value::Float(*a as f64 + b)),
+            (Value::Float(a), Value::Int(b)) => Ok(Value::Float(a + *b as f64)),
+            (Value::String(a), Value::String(b)) => Ok(Value::String(format!("{}{}", a, b))),
+            _ => Err(RuntimeError::invalid_binary_op("+", left.type_name(), right.type_name())),
         }
     }
 
-    fn num_op(
-        left: Value,
-        right: Value,
-        f: impl Fn(f64, f64) -> f64,
-        op: &str,
-    ) -> Result<Value, String> {
-        match (left, right) {
-            (Value::Number(a), Value::Number(b)) => Ok(Value::Number(f(a, b))),
-            _ => Err(format!("Operator '{op}' expects numbers")),
+    fn num_op<F>(left: Value, right: Value, op: F, op_str: &str) -> RuntimeResult<Value>
+    where F: Fn(f64, f64) -> f64 {
+        match (&left, &right) {
+            (Value::Float(a), Value::Float(b)) => Ok(Value::Float(op(*a, *b))),
+            (Value::Int(a), Value::Int(b)) => Ok(Value::Float(op(*a as f64, *b as f64))),
+            (Value::Int(a), Value::Float(b)) => Ok(Value::Float(op(*a as f64, *b))),
+            (Value::Float(a), Value::Int(b)) => Ok(Value::Float(op(*a, *b as f64))),
+            _ => Err(RuntimeError::invalid_binary_op(op_str, left.type_name(), right.type_name())),
         }
     }
 
-    fn cmp(
-        left: Value,
-        right: Value,
-        f: impl Fn(f64, f64) -> bool,
-        op: &str,
-    ) -> Result<Value, String> {
-        match (left, right) {
-            (Value::Number(a), Value::Number(b)) => Ok(Value::Bool(f(a, b))),
-            _ => Err(format!("Operator '{op}' expects numbers")),
+    fn cmp<F>(left: Value, right: Value, op: F, op_str: &str) -> RuntimeResult<Value>
+    where F: Fn(f64, f64) -> bool {
+        match (&left, &right) {
+            (Value::Float(a), Value::Float(b)) => Ok(Value::Bool(op(*a, *b))),
+            (Value::Int(a), Value::Int(b)) => Ok(Value::Bool(op(*a as f64, *b as f64))),
+            (Value::Int(a), Value::Float(b)) => Ok(Value::Bool(op(*a as f64, *b))),
+            (Value::Float(a), Value::Int(b)) => Ok(Value::Bool(op(*a, *b as f64))),
+            _ => Err(RuntimeError::invalid_binary_op(op_str, left.type_name(), right.type_name())),
         }
     }
 }

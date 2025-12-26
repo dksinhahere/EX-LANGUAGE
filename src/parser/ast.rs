@@ -2,7 +2,22 @@ use crate::lexer::Token;
 
 
 pub enum Stmt {
-    Expression(Expr)
+    Expression(Expr),
+    SmartLock{
+        variable:String
+    },
+    SmartUnlock{
+        variable:String
+    },
+    SmartKill{
+        variable:String
+    },
+    SmartRevive{
+        variable:String
+    },
+    SmartConst{
+        variable:String
+    }
 }
 
 
@@ -19,13 +34,28 @@ pub enum Expr {
     },
     _Literal_(Literal),
     Grouping(Box<Expr>),
-    Log(Box<Expr>)
+    Log(Box<Expr>),
+    Variable{
+        name:String
+    },
+    FunctionCall {
+        args: Vec<(String, Expr)>
+    },
+    AllocateVariable{
+        name:String,
+        val:Box<Expr>
+    },
 }
 
 #[derive(Debug, Clone)]
 pub enum Literal {
-    Number(f64),
+    Int(i128),
+    Float(f64),
+    BigInt(String),
     String(String),
-    Boolean(bool),
-    Nil,
+    Bool(bool),
+    Char(char),
+    Nil
 }
+
+

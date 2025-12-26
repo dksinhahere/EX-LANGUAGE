@@ -147,7 +147,7 @@ impl Lexer {
                     self.add_token(TokenKind::MinusMinus);
                 } else if self.match_char('>') {
                     self.add_token(TokenKind::Arrow);
-                } else if self.peek().is_ascii_digit() {
+                } else if self.peek().is_ascii_digit() && self.should_parse_as_negative_literal() {
                     self.negative_number()?;
                 } else {
                     self.add_token(TokenKind::Minus);
@@ -240,6 +240,33 @@ impl Lexer {
 
         Ok(())
     }
+
+    fn should_parse_as_negative_literal(&self) -> bool {
+        if self.tokens.is_empty() {
+            return true; // Start of input
+        }
+        
+        match self.tokens.last().unwrap().kind {
+            TokenKind::LeftParen 
+            | TokenKind::LeftBracket 
+            | TokenKind::LeftBrace
+            | TokenKind::Equal 
+            | TokenKind::Comma
+            | TokenKind::Colon
+            | TokenKind::Arrow => true,
+            
+            // Unsafe: after numbers or identifiers (could be subtraction)
+            TokenKind::Number 
+            | TokenKind::Identifier 
+            | TokenKind::RightParen 
+            | TokenKind::RightBracket 
+            | TokenKind::RightBrace => false,
+            
+            // Default to false to be safe
+            _ => false,
+        }
+    }
+
 
     fn char_literal(&mut self) -> Result<(), LexError> {
         if self.is_at_end() {
@@ -577,38 +604,18 @@ impl Lexer {
             "if" => (TokenKind::If, None),
             "elif" => (TokenKind::Elif, None),
             "else" => (TokenKind::Else, None),
-            "jump" => (TokenKind::Jump, None),
-            "unlabel" => (TokenKind::Unlabel, None),
-            "visible_soft" => (TokenKind::VisibleSoft, None),
-            "visible_hard" => (TokenKind::VisibleHard, None),
-            "visibility" => (TokenKind::Visibility, None),
-            "struct" => (TokenKind::Struct, None),
 
-            "eternal" => (TokenKind::Eternal, None),
-            "rooted" => (TokenKind::Rooted, None),
-            "define" => (TokenKind::Define, None),
-            "new" => (TokenKind::New, None),
             "return" => (TokenKind::Return, None),
-
-            "constructor" => (TokenKind::Constructor, None),
-            "self" => (TokenKind::SelfKw, None),
-            "public" => (TokenKind::Public, None),
-            "private" => (TokenKind::Private, None),
 
             "true" => (TokenKind::True, Some(Literal::Bool(true))),
             "false" => (TokenKind::False, Some(Literal::Bool(false))),
             "nil" => (TokenKind::Nil, None),
 
-            "_define_" => (TokenKind::DefineMacro, None),
-            "ifdef" => (TokenKind::IfDef, None),
-            "ifndef" => (TokenKind::IfNDef, None),
-            "undef" => (TokenKind::UnDef, None),
 
             "enum" => (TokenKind::Enum, None),
             "switch" => (TokenKind::Switch, None),
             "case" => (TokenKind::Case, None),
             "default" => (TokenKind::Default, None),
-            "choose" => (TokenKind::SHIF, None),
 
             "_and_" => (TokenKind::BitAnd, None),
             "_xor_" => (TokenKind::BitXor, None),
@@ -617,17 +624,12 @@ impl Lexer {
             "_lsh_" => (TokenKind::BLShift, None),
             "_rsh_" => (TokenKind::BRShift, None),
 
-            "_def_" => (TokenKind::_DEF_, None),
-            "def" => (TokenKind::Def, None),
-            "gen" => (TokenKind::Gen, None),
-            "_ttv_" => (TokenKind::_TTV_, None),
-            "_delock_" => (TokenKind::_DELOCK_, None),
-            "kill" => (TokenKind::Kill, None),
-            "revive" => (TokenKind::Revive, None),
-            "is_alive" => (TokenKind::IsAlive, None),
-            "lock" => (TokenKind::Lock, None),
-            "unlock" => (TokenKind::Unlock, None),
             "log" => (TokenKind::Log, None),
+
+            "_lock_" => (TokenKind::VLock, None),
+            "_unlock_" => (TokenKind::VUnlock, None),
+            "_kill_" => (TokenKind::VKill, None),
+            "_revive_" => (TokenKind::VRevive, None),
 
             _ => (
                 TokenKind::Identifier,

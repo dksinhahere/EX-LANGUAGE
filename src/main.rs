@@ -12,7 +12,8 @@ use crate::interpreter::Interpreter;
 use crate::lexer::Lexer;
 use crate::parser::Parser;
 
-fn run_source(source: &str) {
+fn run_source(source: &str, interp: &mut Interpreter) {
+    // Pass interpreter as parameter
     // 1) Lex
     let tokens = match Lexer::new(source.to_string()).scan_tokens() {
         Ok(t) => t,
@@ -30,9 +31,7 @@ fn run_source(source: &str) {
             for err in errors {
                 eprintln!(
                     "[line {}] Error at '{}': {}",
-                    err.token.line,
-                    err.token.lexeme,
-                    err.message
+                    err.token.line, err.token.lexeme, err.message
                 );
             }
             return;
@@ -40,12 +39,10 @@ fn run_source(source: &str) {
     };
 
     // 3) Interpret
-    let mut interp = Interpreter::new();
     if let Err(e) = interp.interpret(&statements) {
         eprintln!("Runtime error: {e}");
     }
 }
-
 
 fn run_ex_file(path_str: &str) {
     let path = Path::new(path_str);
@@ -74,14 +71,17 @@ fn run_ex_file(path_str: &str) {
         }
     };
 
-    // lex + parse file content
-    run_source(&source);
+    // Create new interpreter for file execution
+    let mut interp = Interpreter::new();
+    run_source(&source, &mut interp);
 }
 
 fn main() {
+    let mut interp = Interpreter::new(); // Create interpreter once at start
+
     loop {
         match env::current_dir() {
-            Ok(path) => print!("{}> ", path.display()),
+            Ok(path) => print!("PATH=[{}] USER=[{}]% ", path.display(), whoami::username()),
             Err(_) => print!("?> "),
         }
         io::stdout().flush().unwrap();
@@ -115,7 +115,7 @@ fn main() {
                     Some(">>") => {
                         let command: String = parts.collect::<Vec<&str>>().join(" ");
                         if !command.is_empty() {
-                            run_source(&command);
+                            run_source(&command, &mut interp); // Pass the persistent interpreter
                         }
                     }
                     Some("exsh") => {
@@ -135,7 +135,7 @@ fn main() {
                                 }
                             };
 
-                            run_source(&source);
+                            run_source(&source, &mut interp); // Use the same interpreter
                         } else {
                             eprintln!("Usage: exsh <file.ex>");
                         }
