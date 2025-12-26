@@ -1,5 +1,5 @@
+use crate::interpreter::error::{RuntimeError, RuntimeErrorKind, RuntimeResult};
 use std::collections::HashMap;
-use crate::interpreter::error::{RuntimeError, RuntimeResult, RuntimeErrorKind};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -9,7 +9,7 @@ pub enum Value {
     String(String),
     Bool(bool),
     Char(char),
-    Nil
+    Nil,
 }
 
 impl Value {
@@ -66,91 +66,7 @@ impl Environment {
         false
     }
 
-    #[allow(clippy::collapsible_if)]
     pub fn define(&mut self, name: &str, value: Value) -> RuntimeResult<()> {
-        if let Some(scope) = self.scopes.last() {
-            if let Some(binding) = scope.get(name) {
-                if binding.is_constant {
-                    return Err(RuntimeError::cannot_redefine_constant(name));
-                }
-                if binding.smart_lock {
-                    return Err(RuntimeError::cannot_redefine_smart_locked(name));
-                }
-            }
-        }
-
-        if let Some(scope) = self.scopes.last_mut() {
-            scope.insert(
-                name.to_string(),
-                Binding {
-                    value,
-                    is_constant: false,
-                    smart_lock: false,
-                },
-            );
-        }
-        
-        Ok(())
-    }
-
-    #[allow(clippy::collapsible_if)]
-    pub fn define_constant(&mut self, name: &str, value: Value) -> RuntimeResult<()> {
-        if let Some(scope) = self.scopes.last() {
-            if scope.contains_key(name) {
-                return Err(RuntimeError::custom(format!(
-                    "Cannot redefine existing variable '{}' as constant", name
-                )));
-            }
-        }
-
-        if let Some(scope) = self.scopes.last_mut() {
-            scope.insert(
-                name.to_string(),
-                Binding {
-                    value,
-                    is_constant: true,
-                    smart_lock: false,
-                },
-            );
-        }
-        
-        Ok(())
-    }
-
-    #[allow(clippy::collapsible_if)]
-    pub fn define_smart_lock(&mut self, name: &str, value: Value) -> RuntimeResult<()> {
-        if let Some(scope) = self.scopes.last() {
-            if scope.contains_key(name) {
-                return Err(RuntimeError::custom(format!(
-                    "Cannot redefine existing variable '{}' as smart-locked", name
-                )));
-            }
-        }
-
-        if let Some(scope) = self.scopes.last_mut() {
-            scope.insert(
-                name.to_string(),
-                Binding {
-                    value,
-                    is_constant: false,
-                    smart_lock: true,
-                },
-            );
-        }
-        
-        Ok(())
-    }
-
-    pub fn get(&self, name: &str) -> RuntimeResult<Value> {
-        for scope in self.scopes.iter().rev() {
-            if let Some(binding) = scope.get(name) {
-                return Ok(binding.value.clone());
-            }
-        }
-        Err(RuntimeError::undefined_variable(name))
-    }
-
-    pub fn assign(&mut self, name: &str, value: Value) -> RuntimeResult<()> {
         for scope in self.scopes.iter_mut().rev() {
             if let Some(binding) = scope.get_mut(name) {
                 if binding.is_constant {
@@ -161,6 +77,73 @@ impl Environment {
                 }
                 binding.value = value;
                 return Ok(());
+            }
+        }
+
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.insert(
+                name.to_string(),
+                Binding {
+                    value,
+                    is_constant: false,
+                    smart_lock: false,
+                },
+            );
+        }
+
+        Ok(())
+    }
+
+    pub fn define_constant(&mut self, name: &str, value: Value) -> RuntimeResult<()> {
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.insert(
+                name.to_string(),
+                Binding {
+                    value,
+                    is_constant: true,
+                    smart_lock: false,
+                },
+            );
+        }
+
+        Ok(())
+    }
+
+    pub fn define_smart_lock(&mut self, name: &str, value: Value) -> RuntimeResult<()> {
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.insert(
+                name.to_string(),
+                Binding {
+                    value,
+                    is_constant: false,
+                    smart_lock: true,
+                },
+            );
+        }
+
+        Ok(())
+    }
+
+    pub fn define_smart_unclock(&mut self, name: &str, value: Value) -> RuntimeResult<()> {
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.remove(name);
+
+            scope.insert(
+                name.to_string(),
+                Binding {
+                    value,
+                    is_constant: false,
+                    smart_lock: false,
+                },
+            );
+        }
+        Ok(())
+    }
+
+    pub fn get(&self, name: &str) -> RuntimeResult<Value> {
+        for scope in self.scopes.iter().rev() {
+            if let Some(binding) = scope.get(name) {
+                return Ok(binding.value.clone());
             }
         }
         Err(RuntimeError::undefined_variable(name))
@@ -175,13 +158,15 @@ impl Environment {
                 if binding.smart_lock {
                     return Err(RuntimeError::cannot_delete_smart_locked(name));
                 }
-                
+
                 scope.remove(name);
                 return Ok(());
             }
         }
-        
-        Err(RuntimeError::new(RuntimeErrorKind::CannotDeleteUndefined(name.to_string())))
+
+        Err(RuntimeError::new(RuntimeErrorKind::CannotDeleteUndefined(
+            name.to_string(),
+        )))
     }
 
     pub fn push_scope(&mut self) {

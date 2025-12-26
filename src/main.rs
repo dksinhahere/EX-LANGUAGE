@@ -135,6 +135,7 @@ fn main() {
                                 }
                             };
 
+                            interp = Interpreter::new();
                             run_source(&source, &mut interp); // Use the same interpreter
                         } else {
                             eprintln!("Usage: exsh <file.ex>");

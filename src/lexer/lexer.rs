@@ -245,28 +245,27 @@ impl Lexer {
         if self.tokens.is_empty() {
             return true; // Start of input
         }
-        
+
         match self.tokens.last().unwrap().kind {
-            TokenKind::LeftParen 
-            | TokenKind::LeftBracket 
+            TokenKind::LeftParen
+            | TokenKind::LeftBracket
             | TokenKind::LeftBrace
-            | TokenKind::Equal 
+            | TokenKind::Equal
             | TokenKind::Comma
             | TokenKind::Colon
             | TokenKind::Arrow => true,
-            
+
             // Unsafe: after numbers or identifiers (could be subtraction)
-            TokenKind::Number 
-            | TokenKind::Identifier 
-            | TokenKind::RightParen 
-            | TokenKind::RightBracket 
+            TokenKind::Number
+            | TokenKind::Identifier
+            | TokenKind::RightParen
+            | TokenKind::RightBracket
             | TokenKind::RightBrace => false,
-            
+
             // Default to false to be safe
             _ => false,
         }
     }
-
 
     fn char_literal(&mut self) -> Result<(), LexError> {
         if self.is_at_end() {
@@ -611,7 +610,6 @@ impl Lexer {
             "false" => (TokenKind::False, Some(Literal::Bool(false))),
             "nil" => (TokenKind::Nil, None),
 
-
             "enum" => (TokenKind::Enum, None),
             "switch" => (TokenKind::Switch, None),
             "case" => (TokenKind::Case, None),
@@ -630,6 +628,7 @@ impl Lexer {
             "_unlock_" => (TokenKind::VUnlock, None),
             "_kill_" => (TokenKind::VKill, None),
             "_revive_" => (TokenKind::VRevive, None),
+            "_const_" => (TokenKind::VConst, None),
 
             _ => (
                 TokenKind::Identifier,
