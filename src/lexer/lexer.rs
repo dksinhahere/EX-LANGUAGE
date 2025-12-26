@@ -618,7 +618,7 @@ impl Lexer {
             "_lsh_" => (TokenKind::BLShift, None),
             "_rsh_" => (TokenKind::BRShift, None),
 
-            "print" => (TokenKind::Print, None),
+            "kprint" => (TokenKind::Print, None),
 
             "_lock_" => (TokenKind::VLock, None),
             "_unlock_" => (TokenKind::VUnlock, None),

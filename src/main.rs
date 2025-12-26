@@ -90,7 +90,7 @@ fn main() {
 
         match env::current_dir() {
             Ok(path) => print!(
-                "PATH=[{}] USER=[{}]{}",
+                "PATH=[{}] USER=[{}]{} ",
                 path.display(),
                 whoami::username(),
                 which
@@ -131,31 +131,44 @@ fn main() {
                             run_source(&command, &mut interp); // Pass the persistent interpreter
                         }
                     }
-                    Some("exsh") => {
-                        if let Some(file) = parts.next() {
-                            let path = Path::new(file);
 
-                            if path.extension().and_then(|s| s.to_str()) != Some("ex") {
-                                eprintln!("Usage: exsh <file.ex>");
-                                continue;
-                            }
-
-                            let source = match fs::read_to_string(path) {
-                                Ok(s) => s,
-                                Err(e) => {
-                                    eprintln!("Error reading file: {e}");
-                                    continue;
-                                }
-                            };
-
-                            interp = Interpreter::new();
-                            run_source(&source, &mut interp); // Use the same interpreter
-                        } else {
-                            eprintln!("Usage: exsh <file.ex>");
-                        }
-                    }
+                    #[warn(clippy::manual_strip)]
                     Some(cmd) => {
-                        eprintln!("Unknown command: {}", cmd);
+                        if cmd.starts_with("./") {
+                            let file_path = &cmd[2..]; // Remove "./"
+                            let path = Path::new(file_path);
+
+                            // Check if it's a .ex file
+                            if path.extension().and_then(|s| s.to_str()) == Some("ex") {
+                                run_ex_file(file_path);
+                            } else {
+                                // Try to execute as a local binary/script
+                                use std::process::Command;
+                                let args: Vec<&str> = parts.collect();
+                                match Command::new(cmd).args(&args).status() {
+                                    Ok(status) => {
+                                        if !status.success() {
+                                            eprintln!("Process exited with status: {}", status);
+                                        }
+                                    }
+                                    Err(e) => eprintln!("Failed to execute {}: {}", cmd, e),
+                                }
+                            }
+                        } else {
+                            // Try to execute as a system command (without ./)
+                            use std::process::Command;
+                            let args: Vec<&str> = parts.collect();
+                            match Command::new(cmd).args(&args).status() {
+                                Ok(status) => {
+                                    if !status.success() {
+                                        eprintln!("Process exited with status: {}", status);
+                                    }
+                                }
+                                Err(e) => {
+                                    eprintln!("Unknown command or failed to execute: {}", cmd)
+                                }
+                            }
+                        }
                     }
                     None => {}
                 }

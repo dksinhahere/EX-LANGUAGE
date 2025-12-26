@@ -2,12 +2,12 @@
 #ifndef SUM
 
 #define SUM(x, y) [
-    print x + " " + y
+    kprint(x + " " + y)
 ]
 
 #endif
 
-print SUM(3, 4)
+kprint SUM(3, 4)
 
 #undef SUM
 

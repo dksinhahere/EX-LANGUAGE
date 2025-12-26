@@ -362,6 +362,7 @@ impl Interpreter {
                         // Map external parameter names to internal variable names
                         // params: ["name", "age"] - external names used in call
                         // defaults: ["uname", "uage"] - internal names used in function body
+                        
                         for (i, external_param) in func.params.iter().enumerate() {
                             let internal_name = &func.defaults[i];
 
@@ -372,7 +373,7 @@ impl Interpreter {
                                 // Missing required parameter
                                 self.environment.pop_scope();
                                 return Err(RuntimeError::custom(format!(
-                                    "Missing required parameter '{}' in function '{}'",
+                                    "Missing required parameter '{}' in function '{}' according to arguments",
                                     external_param, function
                                 )));
                             }

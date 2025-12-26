@@ -2,10 +2,10 @@
 
 
 label greeting(name=uname, age=uage) {
-    print uname + " How are You, " + uage
+    kprint uname + " How are You, " + uage
 
     label some(src=data) {
-        print data
+        kprint data
     }
 
     some(src="Hello, Suar")
@@ -17,23 +17,23 @@ greeting(name="Danishk", age="23")
 count = 1
 
 label @done {
-    print "Done!"
+    kprint "Done!"
 }
 
-label @do {
-    print count
+label @_do_ {
+    kprint count
     count = count + 1
     if count == 10 {
         jump done
     } else {
-        jump do
+        jump _do_
     }
 }
 
 
 if count <= 10
 {
-    jump do
+    jump _do_
 } else {
     pass
 }

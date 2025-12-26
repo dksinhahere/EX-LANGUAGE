@@ -4,15 +4,15 @@ name = "Danishk"
 name = false
 
 if name {
-    print "Working"
+    kprint "Working"
 
 } elif name == false {
     
-    print "RUNNING"
-    print "ELIF"
-    print "BRANCH"
+    kprint "RUNNING"
+    kprint "ELIF"
+    kprint "BRANCH"
 
 } else {
-    print "Else Branch"
-    print "Fine"
+    kprint "Else Branch"
+    kprint "Fine"
 }
