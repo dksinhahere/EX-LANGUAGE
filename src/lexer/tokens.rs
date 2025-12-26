@@ -80,7 +80,8 @@ pub enum TokenKind {
     Jump,
     If,
     Else,
-    Elif
+    Elif,
+    Pass
 }
 
 #[derive(Debug, Clone, PartialEq)]

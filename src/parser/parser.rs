@@ -57,102 +57,135 @@ impl Parser {
 
     fn statement(&mut self) -> Result<Stmt, ParseError> {
         match self.peek().kind {
-
             TokenKind::VLock => {
                 self.advance();
-                let identifier: String = self.consume(TokenKind::Identifier, "Expected 'Identifier'").unwrap().lexeme;
-                Ok(Stmt::SmartLock {variable: identifier})
+                let identifier: String = self
+                    .consume(TokenKind::Identifier, "Expected 'Identifier'")
+                    .unwrap()
+                    .lexeme;
+                Ok(Stmt::SmartLock {
+                    variable: identifier,
+                })
             }
 
             TokenKind::VUnlock => {
                 self.advance();
-                let identifier: String = self.consume(TokenKind::Identifier, "Expected 'Identifier'").unwrap().lexeme;
-                Ok(Stmt::SmartUnlock {variable: identifier})
+                let identifier: String = self
+                    .consume(TokenKind::Identifier, "Expected 'Identifier'")
+                    .unwrap()
+                    .lexeme;
+                Ok(Stmt::SmartUnlock {
+                    variable: identifier,
+                })
             }
 
             TokenKind::VKill => {
                 self.advance();
-                let identifier: String = self.consume(TokenKind::Identifier, "Expected 'Identifier'").unwrap().lexeme;
-                Ok(Stmt::SmartKill {variable: identifier})
+                let identifier: String = self
+                    .consume(TokenKind::Identifier, "Expected 'Identifier'")
+                    .unwrap()
+                    .lexeme;
+                Ok(Stmt::SmartKill {
+                    variable: identifier,
+                })
             }
-            
+
             TokenKind::VRevive => {
                 self.advance();
-                let identifier: String = self.consume(TokenKind::Identifier, "Expected 'Identifier'").unwrap().lexeme;
-                Ok(Stmt::SmartRevive {variable: identifier})
+                let identifier: String = self
+                    .consume(TokenKind::Identifier, "Expected 'Identifier'")
+                    .unwrap()
+                    .lexeme;
+                Ok(Stmt::SmartRevive {
+                    variable: identifier,
+                })
             }
 
             TokenKind::VConst => {
                 self.advance();
-                let identifier: String = self.consume(TokenKind::Identifier, "Expected 'Identifier'").unwrap().lexeme;
-                Ok(Stmt::SmartConst {variable: identifier})
+                let identifier: String = self
+                    .consume(TokenKind::Identifier, "Expected 'Identifier'")
+                    .unwrap()
+                    .lexeme;
+                Ok(Stmt::SmartConst {
+                    variable: identifier,
+                })
             }
             TokenKind::Label => {
                 self.advance();
-                return self.consume_label();
+                self.consume_label()
             }
             TokenKind::If => {
                 self.advance();
-                return self.consume_if_statement();
+                self.consume_if_statement()
             }
-            _=> {
-                self.expression_statement()
+            TokenKind::Jump => {
+                self.advance();
+                let _where_: String = self
+                    .consume_identifier("Expected 'identifier' after Jump")
+                    .unwrap();
+                Ok(Stmt::Jump { jump: _where_ })
             }
+            TokenKind::Pass => {
+                self.advance();
+                Ok(Stmt::Pass)
+            }
+            _ => self.expression_statement(),
         }
     }
 
     fn consume_if_statement(&mut self) -> Result<Stmt, ParseError> {
         // Parse main if condition
         let condition = self.expression()?;
-        
+
         // Parse if body
         self.consume(TokenKind::LeftBrace, "Expected '{' after if condition")?;
         let mut then_branch = Vec::new();
-        
+
         while !self.check(TokenKind::RightBrace) && !self.is_at_end() {
             then_branch.push(self.statement()?);
         }
-        
+
         self.consume(TokenKind::RightBrace, "Expected '}' after if body")?;
-        
+
         // Parse elif branches
         let mut elif_branches: Vec<(Expr, Vec<Stmt>)> = Vec::new();
-        
+
         while self.check(TokenKind::Elif) {
             self.advance(); // consume 'elif'
-            
+
             let elif_condition = self.expression()?;
-            
+
             self.consume(TokenKind::LeftBrace, "Expected '{' after elif condition")?;
             let mut elif_body = Vec::new();
-            
+
             while !self.check(TokenKind::RightBrace) && !self.is_at_end() {
                 elif_body.push(self.statement()?);
             }
-            
+
             self.consume(TokenKind::RightBrace, "Expected '}' after elif body")?;
-            
+
             elif_branches.push((elif_condition, elif_body));
         }
-        
+
         // Parse else branch (optional)
         let mut else_branch: Option<Vec<Stmt>> = None;
-        
+
         if self.check(TokenKind::Else) {
             self.advance(); // consume 'else'
-            
+
             self.consume(TokenKind::LeftBrace, "Expected '{' after else")?;
             let mut else_body = Vec::new();
-            
+
             while !self.check(TokenKind::RightBrace) && !self.is_at_end() {
                 else_body.push(self.statement()?);
             }
-            
+
             self.consume(TokenKind::RightBrace, "Expected '}' after else body")?;
-            
+
             else_branch = Some(else_body);
         }
-        
+
         Ok(Stmt::If {
             condition,
             then_branch,
@@ -167,60 +200,60 @@ impl Parser {
         let mut callable: bool;
 
         if self.check(TokenKind::At) {
-            callable = false;  // Control flow label (has @)
+            callable = false; // Control flow label (has @)
         } else {
-            callable = true;   // Callable label (no @)
+            callable = true; // Callable label (no @)
         }
 
         if callable {
             // Get label name
             let name = self.consume_identifier("Expected label name")?;
-            
+
             // Parse parameters
             self.consume(TokenKind::LeftParen, "Expected '(' after label name")?;
-            
-            let mut params: Vec<String> = Vec::new();      // External parameter names
-            let mut internal_names: Vec<String> = Vec::new();  // Internal variable names
-            
+
+            let mut params: Vec<String> = Vec::new(); // External parameter names
+            let mut internal_names: Vec<String> = Vec::new(); // Internal variable names
+
             while !self.check(TokenKind::RightParen) {
                 let external_param = self.consume_identifier("Expected parameter name")?;
                 self.consume(TokenKind::Equal, "Expected '=' in parameter mapping")?;
                 let internal_name = self.consume_identifier("Expected internal variable name")?;
-                
-                params.push(external_param);           // Add to params
-                internal_names.push(internal_name);    // Add to internal names
-                
+
+                params.push(external_param); // Add to params
+                internal_names.push(internal_name); // Add to internal names
+
                 if !self.matches(&[TokenKind::Comma]) {
                     break;
                 }
             }
-            
+
             self.consume(TokenKind::RightParen, "Expected ')' after parameters")?;
-            
+
             // Parse body
             self.consume(TokenKind::LeftBrace, "Expected '{' before label body")?;
             let mut body: Vec<Stmt> = Vec::new();
-            
+
             while !self.check(TokenKind::RightBrace) && !self.is_at_end() {
                 body.push(self.statement()?);
             }
-            
+
             self.consume(TokenKind::RightBrace, "Expected '}' after label body")?;
-            
+
             label.push((name, callable, params, internal_names, body));
-            
         } else {
             // Control flow label code...
+            self.advance();
             let name = self.consume_identifier("Expected label name")?;
             self.consume(TokenKind::LeftBrace, "Expected '{' before label body")?;
             let mut body: Vec<Stmt> = Vec::new();
-            
+
             while !self.check(TokenKind::RightBrace) && !self.is_at_end() {
                 body.push(self.statement()?);
             }
-            
+
             self.consume(TokenKind::RightBrace, "Expected '}' after label body")?;
-            
+
             label.push((name, callable, vec![], vec![], body));
         }
 
@@ -232,7 +265,14 @@ impl Parser {
             let token = self.advance();
             Ok(token.lexeme.clone())
         } else {
-            Err(self.error(format!("Expected Identifier at line {}. {}", self.peek().line, message).as_str()))
+            Err(self.error(
+                format!(
+                    "Expected Identifier at line {}. {}",
+                    self.peek().line,
+                    message
+                )
+                .as_str(),
+            ))
         }
     }
 
@@ -491,8 +531,12 @@ impl Parser {
                 self.consume(
                     TokenKind::RightParen,
                     "Expected ')' to enclose function call",
-                ).unwrap();
-                Ok(Expr::FunctionCall { function:identifier, args: args_map })
+                )
+                .unwrap();
+                Ok(Expr::FunctionCall {
+                    function: identifier,
+                    args: args_map,
+                })
             }
 
             TokenKind::Equal => {

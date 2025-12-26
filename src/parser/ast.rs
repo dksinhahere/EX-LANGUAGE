@@ -27,6 +27,11 @@ pub enum Stmt {
         elif_branches: Vec<(Expr, Vec<Stmt>)>,
         else_branch: Option<Vec<Stmt>>,
     },
+    Jump {
+        jump:String
+    },
+    Pass,
+    
 }
 
 

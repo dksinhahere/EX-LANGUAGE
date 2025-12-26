@@ -599,10 +599,6 @@ impl Lexer {
         // Keyword mapping from your JS lexer :contentReference[oaicite:4]{index=4}
         let (kind, literal) = match text.as_str() {
             "import" => (TokenKind::Import, None),
-            "label" => (TokenKind::Label, None),
-            "if" => (TokenKind::If, None),
-            "elif" => (TokenKind::Elif, None),
-            "else" => (TokenKind::Else, None),
 
             "return" => (TokenKind::Return, None),
 
@@ -635,6 +631,7 @@ impl Lexer {
             "if" => (TokenKind::If, None),
             "else" => (TokenKind::Else, None),
             "elif" => (TokenKind::Elif, None),
+            "pass" => (TokenKind::Pass, None),
 
             _ => (
                 TokenKind::Identifier,

@@ -16,7 +16,13 @@ greeting(name="Danishk", age="23")
 
 count = 1
 
+label @done {
+    log "Done!"
+}
+
 label @do {
+    log count
+    count = count + 1
     if count == 10 {
         jump done
     } else {
@@ -24,6 +30,10 @@ label @do {
     }
 }
 
-label @done {
+
+if count <= 10
+{
+    jump do
+} else {
     pass
 }

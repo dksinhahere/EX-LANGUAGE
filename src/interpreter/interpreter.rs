@@ -130,6 +130,29 @@ impl Interpreter {
                 }
                 Ok(())
             }
+            Stmt::Jump { jump } => {
+                // Get the target label from environment
+                let target_value = self.environment.get(jump)?;
+
+                match target_value {
+                    Value::ControlFlow(ctrl) => {
+                        // Execute the control flow label's body
+                        for stmt in &ctrl.body {
+                            self.execute(stmt)?;
+                        }
+                        Ok(())
+                    }
+                    _ => Err(RuntimeError::custom(format!(
+                        "'{}' is not a valid jump target (must be a control flow label)",
+                        jump
+                    ))),
+                }
+            }
+
+            Stmt::Pass => {
+                // Do nothing - pass statement
+                Ok(())
+            }
         }
     }
 
@@ -222,14 +245,25 @@ impl Interpreter {
 
             Expr::Log(expr) => {
                 let value = self.eval(expr)?;
-                println!("{:?}", value);
+                match value {
+                    Value::BigInt(bi) => println!("{}", bi),
+                    Value::Bool(bo) => println!("{}", bo),
+                    Value::Char(ch) => println!("{}", ch),
+                    Value::String(st) => println!("{}", st),
+                    Value::Int(it) => println!("{}", it),
+                    Value::Float(fl) => println!("{}", fl),
+                    Value::Nil => println!("Nil"),
+                    _ => {
+                        println!("Unable to Render On Display")
+                    }
+                }
                 Ok(Value::Nil)
             }
 
             Expr::FunctionCall { function, args } => {
                 // Get function from environment
                 let func_value = self.environment.get(function)?;
-                
+
                 match func_value {
                     Value::Function(func) => {
                         // Create new scope for function execution
@@ -247,7 +281,7 @@ impl Interpreter {
                         // defaults: ["uname", "uage"] - internal names used in function body
                         for (i, external_param) in func.params.iter().enumerate() {
                             let internal_name = &func.defaults[i];
-                            
+
                             if let Some(arg_value) = arg_map.get(external_param) {
                                 // Bind argument to internal variable name
                                 self.environment.define(internal_name, arg_value.clone())?;
@@ -256,8 +290,7 @@ impl Interpreter {
                                 self.environment.pop_scope();
                                 return Err(RuntimeError::custom(format!(
                                     "Missing required parameter '{}' in function '{}'",
-                                    external_param,
-                                    function
+                                    external_param, function
                                 )));
                             }
                         }
@@ -279,7 +312,6 @@ impl Interpreter {
                     ))),
                 }
             }
-
 
             _ => Err(RuntimeError::custom("Unsupported expression")),
         }
