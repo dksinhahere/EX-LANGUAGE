@@ -646,10 +646,14 @@ impl Lexer {
             "_endif_" => (TokenKind::ENDIF, None),
             "_undef_" => (TokenKind::UNDEF, None),
 
-            "struct" => (TokenKind::Struct, None),
-            "constructor" => (TokenKind::Constructor, None),
-            "new" => (TokenKind::New, None),
-            "self" => (TokenKind::Self_, None),
+            "_dict_" => (TokenKind::Dictionary, None),
+            "_list_" => (TokenKind::List, None),
+            "_axis_" => (TokenKind::Axis, None),
+
+            "d" => (TokenKind::D, None),
+            "l" => (TokenKind::L, None),
+            "a" => (TokenKind::A, None),
+            "function" => (TokenKind::Function, None),
 
             _ => (
                 TokenKind::Identifier,

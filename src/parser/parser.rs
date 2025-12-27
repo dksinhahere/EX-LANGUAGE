@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt::Arguments;
 
 use crate::lexer::{Token, TokenKind};
-use crate::parser::ast::{Expr, Literal, Stmt, StructMethod};
+use crate::parser::ast::{Expr, Literal, Stmt};
 
 #[derive(Debug, Clone)]
 pub struct ParseError {
@@ -157,72 +157,8 @@ impl Parser {
                 self.undef_macro()
             }
 
-            TokenKind::Struct => {
-                self.advance();
-                self.parse_struct_definition()
-            }
-
             _ => self.expression_statement(),
         }
-    }
-
-    fn parse_struct_definition(&mut self) -> Result<Stmt, ParseError> {
-        let struct_name = self.consume_identifier("Expected struct name")?;
-
-        self.consume(TokenKind::LeftBrace, "Expected '{' after struct name")?;
-
-        let mut methods = Vec::new();
-
-        while !self.check(TokenKind::RightBrace) && !self.is_at_end() {
-            // Parse method definition - allow 'constructor' keyword as method name
-            let method_name = if self.check(TokenKind::Constructor) {
-                self.advance();
-                "constructor".to_string()
-            } else {
-                self.consume_identifier("Expected method name")?
-            };
-
-            self.consume(TokenKind::LeftParen, "Expected '(' after method name")?;
-
-            let mut params = Vec::new();
-            while !self.check(TokenKind::RightParen) {
-                // Allow 'self' keyword as parameter name
-                let param_name = if self.check(TokenKind::Self_) {
-                    self.advance();
-                    "self".to_string()
-                } else {
-                    self.consume_identifier("Expected parameter name")?
-                };
-                params.push(param_name);
-
-                if !self.matches(&[TokenKind::Comma]) {
-                    break;
-                }
-            }
-
-            self.consume(TokenKind::RightParen, "Expected ')' after parameters")?;
-            self.consume(TokenKind::LeftBrace, "Expected '{' before method body")?;
-
-            let mut body = Vec::new();
-            while !self.check(TokenKind::RightBrace) && !self.is_at_end() {
-                body.push(self.statement()?);
-            }
-
-            self.consume(TokenKind::RightBrace, "Expected '}' after method body")?;
-
-            methods.push(StructMethod {
-                name: method_name,
-                params,
-                body,
-            });
-        }
-
-        self.consume(TokenKind::RightBrace, "Expected '}' after struct body")?;
-
-        Ok(Stmt::StructDef {
-            name: struct_name,
-            methods,
-        })
     }
 
     fn undef_macro(&mut self) -> Result<Stmt, ParseError> {
@@ -703,8 +639,73 @@ impl Parser {
         }
     }
 
+    fn consume_dataset(&mut self) -> Result<Expr, ParseError> {
+        // [&d, ] -> dictionary
+        self.advance();
+        self.consume(TokenKind::Ampersand, "Expected '&' after '['")?;
+
+        match self.peek().kind {
+            TokenKind::D => {
+                self.advance();
+                self.consume(TokenKind::Comma, "Expected ',' after [&d] as [&d, ...]")?;
+
+                let mut entries: Vec<(Expr, Expr)> = Vec::new(); // Changed from HashMap
+
+                while !self.check(TokenKind::RightBracket) {
+                    // Parse the key
+                    let key = self.expression()?;
+                    self.consume(
+                        TokenKind::Colon,
+                        "Expected ':' to differentiate key and value",
+                    )?;
+
+                    // Parse the value (either a function or expression)
+                    let value = if self.matches(&[TokenKind::Function]) {
+                        // Parse anonymous function without parameters
+                        self.consume(TokenKind::LeftBrace, "Expected '{' after 'function'")?;
+
+                        let mut body: Vec<Stmt> = Vec::new();
+                        while !self.check(TokenKind::RightBrace) && !self.is_at_end() {
+                            body.push(self.declaration()?);
+                        }
+
+                        self.consume(TokenKind::RightBrace, "Expected '}' after function body")?;
+
+                        // Create function expression with empty parameters
+                        Expr::Function {
+                            name: Box::new(key.clone()),
+                            params: Vec::new(),
+                            body,
+                        }
+                    } else {
+                        // Parse regular expression as value
+                        self.expression()?
+                    };
+
+                    entries.push((key, value)); // Changed from dict.insert()
+
+                    // Handle comma separation between key-value pairs
+                    if !self.check(TokenKind::RightBracket) {
+                        self.consume(TokenKind::Comma, "Expected ',' between dictionary entries")?;
+                    }
+                }
+
+                self.consume(
+                    TokenKind::RightBracket,
+                    "Expected ']' after dictionary entries",
+                )?;
+
+                Ok(Expr::Dictionary(entries)) // Changed from dict
+            }
+
+            _ => Err(self.error("Expected 'd' after '&' in dictionary syntax")),
+        }
+    }
+
     fn primary(&mut self) -> Result<Expr, ParseError> {
         match self.peek().kind {
+            TokenKind::LeftBracket => self.consume_dataset(),
+
             TokenKind::ColonColon => {
                 self.advance();
                 self.consume(
@@ -882,63 +883,6 @@ impl Parser {
                 }
             }
 
-            TokenKind::Self_ => {
-                self.advance(); // consume 'self'
-
-                // base expr is the 'self' variable
-                let mut expr = Expr::Variable {
-                    name: "self".to_string(),
-                };
-
-                // support: self.field, self.field = value, self.method(...)
-                while self.matches(&[TokenKind::Dot]) {
-                    let member = self.consume_identifier("Expected member name after '.'")?;
-
-                    // method call: self.method(...)
-                    if self.check(TokenKind::LeftParen) {
-                        self.advance(); // consume '('
-
-                        let mut args = Vec::new();
-                        while !self.check(TokenKind::RightParen) {
-                            args.push(self.expression()?);
-
-                            if !self.matches(&[TokenKind::Comma]) {
-                                break;
-                            }
-                        }
-
-                        self.consume(TokenKind::RightParen, "Expected ')' after method arguments")?;
-
-                        expr = Expr::MethodCall {
-                            object: Box::new(expr),
-                            method: member,
-                            args,
-                        };
-                        continue;
-                    }
-
-                    // assignment: self.field = value
-                    if self.check(TokenKind::Equal) {
-                        self.advance(); // consume '='
-                        let value = self.expression()?;
-
-                        return Ok(Expr::MemberAssign {
-                            object: Box::new(expr),
-                            member,
-                            value: Box::new(value),
-                        });
-                    }
-
-                    // access: self.field
-                    expr = Expr::MemberAccess {
-                        object: Box::new(expr),
-                        member,
-                    };
-                }
-
-                Ok(expr)
-            }
-
             TokenKind::Identifier => self.scan_identifier(),
 
             _ => Err(self.error("Expect expression")),
@@ -954,100 +898,19 @@ impl Parser {
         self.advance(); // consume the identifier
 
         match self.peek().kind {
-            // ---------------------------------------------------
-            // Struct / Static call: student::new(...)
-            // ---------------------------------------------------
-            TokenKind::ColonColon => {
-                self.advance(); // consume '::'
-
-                // IMPORTANT FIX:
-                // after '::' allow either Identifier OR keyword 'new'
-                let method_name: String = if self.check(TokenKind::Identifier) {
-                    self.advance().lexeme.clone()
-                } else if self.check(TokenKind::New) {
-                    // if your token is named New_ or NEW, change it accordingly
-                    self.advance(); // consume 'new'
-                    "new".to_string()
-                } else {
-                    return Err(self.error(
-                        format!(
-                            "Expected Identifier at line {}. Expected method name after '::'",
-                            self.peek().line
-                        )
-                        .as_str(),
-                    ));
-                };
-
-                self.consume(TokenKind::LeftParen, "Expected '(' after method name")?;
-
-                let mut args: Vec<Expr> = Vec::new();
-                while !self.check(TokenKind::RightParen) {
-                    args.push(self.expression()?);
-
-                    if !self.matches(&[TokenKind::Comma]) {
-                        break;
-                    }
-                }
-
-                self.consume(TokenKind::RightParen, "Expected ')' after arguments")?;
-
-                Ok(Expr::StructInstantiation {
-                    struct_name: identifier,
-                    method_name,
-                    args,
+            // dict["Key"]
+            
+            TokenKind::LeftBracket => {
+                self.advance();
+                let node = self.expression()?;
+                self.consume(
+                    TokenKind::RightBracket,
+                    "Expepected ']' to enclose dictionay invocation",
+                )?;
+                Ok(Expr::DictionaryAccess {
+                    dict: identifier,
+                    member: Box::new(node),
                 })
-            }
-
-            // ---------------------------------------------------
-            // Member access / method call / member assign:
-            // obj.member, obj.method(...), obj.member = value
-            // ---------------------------------------------------
-            TokenKind::Dot => {
-                let mut expr = Expr::Variable { name: identifier };
-
-                while self.matches(&[TokenKind::Dot]) {
-                    let member = self.consume_identifier("Expected member name after '.'")?;
-
-                    if self.check(TokenKind::LeftParen) {
-                        // Method call: obj.method(...)
-                        self.advance(); // consume '('
-
-                        let mut args = Vec::new();
-                        while !self.check(TokenKind::RightParen) {
-                            args.push(self.expression()?);
-
-                            if !self.matches(&[TokenKind::Comma]) {
-                                break;
-                            }
-                        }
-
-                        self.consume(TokenKind::RightParen, "Expected ')' after method arguments")?;
-
-                        expr = Expr::MethodCall {
-                            object: Box::new(expr),
-                            method: member,
-                            args,
-                        };
-                    } else if self.check(TokenKind::Equal) {
-                        // Member assignment: obj.member = value
-                        self.advance(); // consume '='
-                        let value = self.expression()?;
-
-                        return Ok(Expr::MemberAssign {
-                            object: Box::new(expr),
-                            member,
-                            value: Box::new(value),
-                        });
-                    } else {
-                        // Member access: obj.member
-                        expr = Expr::MemberAccess {
-                            object: Box::new(expr),
-                            member,
-                        };
-                    }
-                }
-
-                Ok(expr)
             }
 
             // ---------------------------------------------------
@@ -1081,7 +944,10 @@ impl Parser {
                     }
                 }
 
-                self.consume(TokenKind::RightParen, "Expected ')' to enclose function call")?;
+                self.consume(
+                    TokenKind::RightParen,
+                    "Expected ')' to enclose function call",
+                )?;
 
                 Ok(Expr::FunctionCall {
                     function: identifier,
@@ -1108,9 +974,6 @@ impl Parser {
             _ => Ok(Expr::Variable { name: identifier }),
         }
     }
-//==========================================================
-
-    //==========================================================
 
     // =========================================================
     // Cursor utilities

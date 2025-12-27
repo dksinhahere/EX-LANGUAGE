@@ -259,14 +259,7 @@ impl Interpreter {
                 Ok(())
             }
 
-            Stmt::StructDef { name, methods } => {
-                let struct_def = Value::StructDef(crate::values::values::StructDef {
-                    name: name.clone(),
-                    methods: methods.clone(),
-                });
-                self.environment.define(name, struct_def)?;
-                Ok(())
-            }
+        
         }
     }
 
@@ -285,6 +278,107 @@ impl Interpreter {
                 }
 
                 Ok(Value::Bool(true))
+            },
+
+            Expr::DictionaryAccess { dict, member } => {
+                // Get the dictionary value
+                let dict_value = self.environment.get(dict)?;
+                
+                // Ensure it's actually a dictionary
+                let dict_map = match dict_value {
+                    Value::Dictionary(map) => map,
+                    other => return Err(RuntimeError::custom(
+                        format!("Expected Dictionary, got {}", other.type_name())
+                    )),
+                };
+
+                // Evaluate member expression and convert to string key
+                let member_key = match self.eval(member)? { // Use ? instead of unwrap
+                    Value::String(s) => s,
+                    Value::Int(i) => i.to_string(),
+                    Value::Float(f) => f.to_string(),
+                    Value::Bool(b) => b.to_string(),
+                    Value::Char(c) => c.to_string(),
+                    other => return Err(RuntimeError::custom(
+                        format!("Dictionary keys must be primitive types, got {}", other.type_name())
+                    )),
+                };
+
+                // Get the value from the dictionary
+                let value = dict_map.get(&member_key)
+                    .ok_or_else(|| RuntimeError::custom(
+                        format!("Key '{}' not found in dictionary", member_key)
+                    ))?;
+
+                // If it's a function, execute it; otherwise return the value
+                match value {
+                    Value::Function(func) => {
+                        // Execute the function with no arguments
+                        self.environment.push_scope();
+                        
+                        // Execute all statements in the function body
+                        for stmt in &func.body {
+                            self.execute(stmt)?; // execute returns (), not Value
+                        }
+                        
+                        self.environment.pop_scope();
+                        
+                        // For now, return Nil since functions don't have explicit return values
+                        Ok(Value::Nil)
+                    }
+                    other => Ok(other.clone()),
+                }
+            },
+
+            Expr::Dictionary(entries) => {
+                let mut dict_map: HashMap<String, Value> = HashMap::new();
+
+                for (key_expr, value_expr) in entries {
+                    // Evaluate the key
+                    let key_value = self.eval(key_expr)?;
+                    
+                    // Convert key to string
+                    let key_str = match key_value {
+                        Value::String(s) => s,
+                        Value::Int(i) => i.to_string(),
+                        Value::Float(f) => f.to_string(),
+                        Value::Bool(b) => b.to_string(),
+                        Value::Char(c) => c.to_string(),
+                        _ => return Err(RuntimeError::custom(
+                            format!("Dictionary keys must be primitive types, got {}", key_value.type_name())
+                        )),
+                    };
+
+                    // Evaluate the value
+                    let value = self.eval(value_expr)?;
+                    
+                    dict_map.insert(key_str, value);
+                }
+
+                Ok(Value::Dictionary(dict_map))
+            }
+
+            #[allow(clippy::useless_format)]
+            Expr::Function { name, params, body } => {
+                // Create an anonymous function value
+                let key_str:String = match self.eval(name).unwrap() {
+                    Value::String(s) => s,
+                    Value::Int(i) => i.to_string(),
+                    Value::Float(f) => f.to_string(),
+                    Value::Bool(b) => b.to_string(),
+                    Value::Char(c) => c.to_string(),
+                    _ => return Err(RuntimeError::custom(
+                            format!("Dictionary keys must be primitive types")
+                    )),
+                };
+
+                Ok(Value::Function(Function {
+                    name: key_str,
+                    params: params.clone(),
+                    defaults: params.clone(),
+                    body: body.clone(),
+                    visible_blocks: Vec::new(),
+                }))
             }
 
             Expr::Iterable { value } => {
@@ -416,255 +510,7 @@ impl Interpreter {
                 Ok(Value::Nil)
             }
 
-            Expr::StructInstantiation {
-                struct_name,
-                method_name,
-                args,
-            } => {
-                // Get the struct definition
-                let struct_value = self.environment.get(struct_name)?;
-
-                match struct_value {
-                    Value::StructDef(struct_def) => {
-                        // Create a new instance
-                        let mut instance = crate::values::values::StructInstance {
-                            struct_name: struct_name.clone(),
-                            fields: std::collections::HashMap::new(),
-                            methods: struct_def.methods.clone(),
-                        };
-
-                        // -----------------------------
-                        // FIX: map ::new(...) -> constructor(...)
-                        // -----------------------------
-                        let lookup_name: &str = if method_name == "new" {
-                            "constructor"
-                        } else {
-                            method_name.as_str()
-                        };
-
-                        // Find constructor (or method) and ERROR if missing
-                        let constructor = struct_def
-                            .methods
-                            .iter()
-                            .find(|m| m.name == lookup_name)
-                            .ok_or_else(|| {
-                                RuntimeError::custom(format!(
-                                    "Runtime Error: Struct '{}' has no method '{}' (lookup '{}')",
-                                    struct_name, method_name, lookup_name
-                                ))
-                            })?;
-
-                        // Create a new scope for constructor execution
-                        self.environment.push_scope();
-
-                        // Bind 'self' to allow field initialization
-                        let self_value = Value::StructInstance(instance.clone());
-                        self.environment.define("self", self_value)?;
-
-                        // Bind constructor parameters (skip 'self' which is first param)
-                        let param_start = if !constructor.params.is_empty() && constructor.params[0] == "self" {
-                            1
-                        } else {
-                            0
-                        };
-
-                        for (i, param) in constructor.params[param_start..].iter().enumerate() {
-                            if i < args.len() {
-                                let arg_value = self.eval(&args[i])?;
-                                self.environment.define(param, arg_value)?;
-                            } else {
-                                // Optional strictness: missing arg -> runtime error
-                                // return Err(RuntimeError::custom(format!(
-                                //     "Runtime Error: Missing argument for parameter '{}' in '{}::{}'",
-                                //     param, struct_name, method_name
-                                // )));
-                            }
-                        }
-
-                        // Execute constructor body
-                        for stmt in &constructor.body {
-                            self.execute(stmt)?;
-                        }
-
-                        // Extract fields that were set via self.field = value
-                        match self.environment.get("self") {
-                            Ok(Value::StructInstance(updated_instance)) => {
-                                instance = updated_instance;
-                            }
-                            Ok(_) => {
-                                self.environment.pop_scope();
-                                return Err(RuntimeError::custom(
-                                    "Runtime Error: 'self' was overwritten with a non-struct value",
-                                ));
-                            }
-                            Err(e) => {
-                                self.environment.pop_scope();
-                                return Err(e);
-                            }
-                        }
-
-                        self.environment.pop_scope();
-
-                        Ok(Value::StructInstance(instance))
-                    }
-
-                    _ => Err(RuntimeError::custom(format!(
-                        "'{}' is not a struct definition",
-                        struct_name
-                    ))),
-                }
-            }
-
-
-            Expr::MemberAccess { object, member } => {
-                let obj_value = self.eval(object)?;
-                
-                match obj_value {
-                    Value::StructInstance(instance) => {
-                        if let Some(field_value) = instance.fields.get(member) {
-                            Ok(field_value.clone())
-                        } else {
-                            Err(RuntimeError::custom(format!(
-                                "Struct '{}' has no field '{}'",
-                                instance.struct_name, member
-                            )))
-                        }
-                    }
-                    _ => Err(RuntimeError::custom(format!(
-                        "Cannot access member '{}' on non-struct type {}",
-                        member,
-                        obj_value.type_name()
-                    ))),
-                }
-            }
-
-            #[allow(clippy::collapsible_if)]
-            Expr::MemberAssign {
-                object,
-                member,
-                value,
-            } => {
-                // Special handling for self.field = value in methods
-                if let Expr::Variable { name } = &**object {
-                    if name == "self" {
-                        // Get current self instance
-                        if let Ok(Value::StructInstance(mut instance)) = self.environment.get("self") {
-                            let new_value = self.eval(value)?;
-                            instance.fields.insert(member.clone(), new_value.clone());
-                            
-                            // Update self in environment
-                            self.environment.define("self", Value::StructInstance(instance))?;
-                            
-                            return Ok(Value::Nil);
-                        }
-                    }
-                }
-                
-                // For regular object.field = value, we need to handle it differently
-                // We need to get the variable name and update it
-                if let Expr::Variable { name: var_name } = &**object {
-                    let obj_value = self.environment.get(var_name)?;
-                    
-                    match obj_value {
-                        Value::StructInstance(mut instance) => {
-                            let new_value = self.eval(value)?;
-                            instance.fields.insert(member.clone(), new_value);
-                            
-                            // Update the variable with the modified instance
-                            self.environment.define(var_name, Value::StructInstance(instance))?;
-                            
-                            Ok(Value::Nil)
-                        }
-                        _ => Err(RuntimeError::custom(format!(
-                            "Cannot assign to member '{}' on non-struct type {}",
-                            member,
-                            obj_value.type_name()
-                        ))),
-                    }
-                } else {
-                    Err(RuntimeError::custom(
-                        "Member assignment requires a simple variable reference".to_string()
-                    ))
-                }
-            }
-        
-            // NEW: Method call: obj.method(args)
-            Expr::MethodCall {
-                object,
-                method,
-                args,
-            } => {
-                let obj_value = self.eval(object)?;
-                
-                match obj_value {
-                    Value::StructInstance(instance) => {
-                        // Find the method
-                        if let Some(method_def) = instance.methods.iter().find(|m| m.name == *method) {
-                            // Create new scope for method execution
-                            self.environment.push_scope();
-                            
-                            // Bind 'self' to the instance
-                            self.environment.define("self", Value::StructInstance(instance.clone()))?;
-                            
-                            // Inject instance fields into scope
-                            for (field_name, field_value) in &instance.fields {
-                                self.environment.define(field_name, field_value.clone())?;
-                            }
-                            
-                            // Bind method parameters (skip 'self' if it's first)
-                            let param_start = if !method_def.params.is_empty() && method_def.params[0] == "self" {
-                                1
-                            } else {
-                                0
-                            };
-                            
-                            for (i, param) in method_def.params[param_start..].iter().enumerate() {
-                                if i < args.len() {
-                                    let arg_value = self.eval(&args[i])?;
-                                    self.environment.define(param, arg_value)?;
-                                }
-                            }
-                            
-                            // Execute method body
-                            for stmt in &method_def.body {
-                                self.execute(stmt)?;
-                            }
-                            
-                            // Extract updated fields - check self first
-                            let mut updated_instance = instance.clone();
-                            if let Ok(Value::StructInstance(self_instance)) = self.environment.get("self") {
-                                updated_instance = self_instance;
-                            } else {
-                                // Fallback: extract fields from environment
-                                for field_name in instance.fields.keys() {
-                                    if let Ok(updated_value) = self.environment.get(field_name) {
-                                        updated_instance.fields.insert(field_name.clone(), updated_value);
-                                    }
-                                }
-                            }
-                            
-                            self.environment.pop_scope();
-                            
-                            // Update the original variable if this was called on a variable
-                            if let Expr::Variable { name: var_name } = &**object {
-                                self.environment.define(var_name, Value::StructInstance(updated_instance))?;
-                            }
-                            
-                            Ok(Value::Nil)
-                        } else {
-                            Err(RuntimeError::custom(format!(
-                                "Struct '{}' has no method '{}'",
-                                instance.struct_name, method
-                            )))
-                        }
-                    }
-                    _ => Err(RuntimeError::custom(format!(
-                        "Cannot call method '{}' on non-struct type {}",
-                        method,
-                        obj_value.type_name()
-                    ))),
-                }
-            }
+            
 
             Expr::FunctionCall { function, args } => {
                 // Get function from environment
@@ -794,8 +640,6 @@ impl Interpreter {
                     ))),
                 }
             }
-
-            
 
             _ => Err(RuntimeError::custom("Unsupported expression")),
         }

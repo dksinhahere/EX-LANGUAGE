@@ -150,6 +150,7 @@ impl Parser {
         }
     }
 
+    #[allow(clippy::collapsible_if)]
     fn match_token(&mut self, token_type: TokenType) -> bool {
         if let Some(tok) = self.peek_token() {
             if tok.token_type == token_type {

@@ -1,19 +1,7 @@
 use crate::lexer::Token;
 
-#[derive(Debug, Clone)]
-pub struct StructMethod {
-    pub name: String,
-    pub params: Vec<String>,
-    pub body: Vec<Stmt>,
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
-
-    StructDef {
-        name: String,
-        methods: Vec<StructMethod>,
-    },
     Expression(Expr),
     SmartLock {
         variable: String,
@@ -34,8 +22,8 @@ pub enum Stmt {
         _label_: Vec<(String, bool, Vec<String>, Vec<String>, Vec<String>, Vec<Stmt>)>,
     },
     Visible {
-        _name_:String,
-        _block_: Vec<(String, Expr)>
+        _name_: String,
+        _block_: Vec<(String, Expr)>,
     },
     If {
         condition: Expr,
@@ -62,29 +50,20 @@ pub enum Stmt {
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
 
-    StructInstantiation {
-        struct_name: String,
-        method_name: String, // typically "new"
-        args: Vec<Expr>,
-    },
-    MemberAccess {
-        object: Box<Expr>,
-        member: String,
-    },
-    MemberAssign {
-        object: Box<Expr>,
-        member: String,
-        value: Box<Expr>,
-    },
-    MethodCall {
-        object: Box<Expr>,
-        method: String,
-        args: Vec<Expr>,
+    DictionaryAccess {
+        dict:String,
+        member:Box<Expr>
     },
 
+    Dictionary(Vec<(Expr, Expr)>),
+    Function {
+        name:Box<Expr>,
+        params: Vec<String>,
+        body: Vec<Stmt>,
+    },
     Binary {
         left: Box<Expr>,
         operator: Token,
@@ -96,7 +75,7 @@ pub enum Expr {
     },
     MacroCall {
         var: Vec<Expr>,
-        body: Vec<Stmt>
+        body: Vec<Stmt>,
     },
     _Literal_(Literal),
     Grouping(Box<Expr>),
@@ -112,13 +91,12 @@ pub enum Expr {
         name: String,
         val: Box<Expr>,
     },
-
     Iterable {
         value: Vec<i128>,
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
     Int(i128),
     Float(f64),

@@ -1,5 +1,5 @@
 use crate::interpreter::error::{RuntimeError, RuntimeErrorKind, RuntimeResult};
-use crate::parser::ast::{Stmt, StructMethod};
+use crate::parser::ast::Stmt;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
@@ -17,20 +17,6 @@ pub struct ControlFlow {
     pub body: Vec<Stmt>,
 }
 
-// NEW: Struct definition type
-#[derive(Debug, Clone)]
-pub struct StructDef {
-    pub name: String,
-    pub methods: Vec<StructMethod>,
-}
-
-// NEW: Struct instance type
-#[derive(Debug, Clone)]
-pub struct StructInstance {
-    pub struct_name: String,
-    pub fields: HashMap<String, Value>,
-    pub methods: Vec<StructMethod>,
-}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -44,8 +30,7 @@ pub enum Value {
     Function(Function),
     ControlFlow(ControlFlow),
     Array(Vec<Value>),
-    StructDef(StructDef),           // NEW: Struct definition
-    StructInstance(StructInstance), // NEW: Struct instance
+    Dictionary(HashMap<String, Value>),
 }
 
 impl PartialEq for Function {
@@ -60,19 +45,6 @@ impl PartialEq for ControlFlow {
     }
 }
 
-// NEW: PartialEq for StructDef
-impl PartialEq for StructDef {
-    fn eq(&self, other: &Self) -> bool {
-        self.name == other.name
-    }
-}
-
-// NEW: PartialEq for StructInstance
-impl PartialEq for StructInstance {
-    fn eq(&self, other: &Self) -> bool {
-        self.struct_name == other.struct_name && self.fields == other.fields
-    }
-}
 
 impl Value {
     pub fn truthy(&self) -> bool {
@@ -87,8 +59,7 @@ impl Value {
             Value::Function(_) => true,
             Value::ControlFlow(_) => true,
             Value::Array(arr) => !arr.is_empty(),
-            Value::StructDef(_) => true,        // NEW
-            Value::StructInstance(_) => true,   // NEW
+            Value::Dictionary(dict) => !dict.is_empty(),
         }
     }
 
@@ -104,8 +75,8 @@ impl Value {
             Value::Function(_) => "Function",
             Value::ControlFlow(_) => "ControlFlow",
             Value::Array(_) => "Array",
-            Value::StructDef(_) => "StructDef",                    // NEW
-            Value::StructInstance(inst) => &inst.struct_name,      // NEW: return actual struct name
+            Value::Dictionary(_) => "Dictionary",
+            
         }
     }
 }
