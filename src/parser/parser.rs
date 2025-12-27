@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt::Arguments;
 
 use crate::lexer::{Token, TokenKind};
-use crate::parser::ast::{Expr, Literal, Stmt};
+use crate::parser::ast::{Expr, Literal, Stmt, StructMethod};
 
 #[derive(Debug, Clone)]
 pub struct ParseError {
@@ -157,8 +157,72 @@ impl Parser {
                 self.undef_macro()
             }
 
+            TokenKind::Struct => {
+                self.advance();
+                self.parse_struct_definition()
+            }
+
             _ => self.expression_statement(),
         }
+    }
+
+    fn parse_struct_definition(&mut self) -> Result<Stmt, ParseError> {
+        let struct_name = self.consume_identifier("Expected struct name")?;
+
+        self.consume(TokenKind::LeftBrace, "Expected '{' after struct name")?;
+
+        let mut methods = Vec::new();
+
+        while !self.check(TokenKind::RightBrace) && !self.is_at_end() {
+            // Parse method definition - allow 'constructor' keyword as method name
+            let method_name = if self.check(TokenKind::Constructor) {
+                self.advance();
+                "constructor".to_string()
+            } else {
+                self.consume_identifier("Expected method name")?
+            };
+
+            self.consume(TokenKind::LeftParen, "Expected '(' after method name")?;
+
+            let mut params = Vec::new();
+            while !self.check(TokenKind::RightParen) {
+                // Allow 'self' keyword as parameter name
+                let param_name = if self.check(TokenKind::Self_) {
+                    self.advance();
+                    "self".to_string()
+                } else {
+                    self.consume_identifier("Expected parameter name")?
+                };
+                params.push(param_name);
+
+                if !self.matches(&[TokenKind::Comma]) {
+                    break;
+                }
+            }
+
+            self.consume(TokenKind::RightParen, "Expected ')' after parameters")?;
+            self.consume(TokenKind::LeftBrace, "Expected '{' before method body")?;
+
+            let mut body = Vec::new();
+            while !self.check(TokenKind::RightBrace) && !self.is_at_end() {
+                body.push(self.statement()?);
+            }
+
+            self.consume(TokenKind::RightBrace, "Expected '}' after method body")?;
+
+            methods.push(StructMethod {
+                name: method_name,
+                params,
+                body,
+            });
+        }
+
+        self.consume(TokenKind::RightBrace, "Expected '}' after struct body")?;
+
+        Ok(Stmt::StructDef {
+            name: struct_name,
+            methods,
+        })
     }
 
     fn undef_macro(&mut self) -> Result<Stmt, ParseError> {
@@ -818,6 +882,63 @@ impl Parser {
                 }
             }
 
+            TokenKind::Self_ => {
+                self.advance(); // consume 'self'
+
+                // base expr is the 'self' variable
+                let mut expr = Expr::Variable {
+                    name: "self".to_string(),
+                };
+
+                // support: self.field, self.field = value, self.method(...)
+                while self.matches(&[TokenKind::Dot]) {
+                    let member = self.consume_identifier("Expected member name after '.'")?;
+
+                    // method call: self.method(...)
+                    if self.check(TokenKind::LeftParen) {
+                        self.advance(); // consume '('
+
+                        let mut args = Vec::new();
+                        while !self.check(TokenKind::RightParen) {
+                            args.push(self.expression()?);
+
+                            if !self.matches(&[TokenKind::Comma]) {
+                                break;
+                            }
+                        }
+
+                        self.consume(TokenKind::RightParen, "Expected ')' after method arguments")?;
+
+                        expr = Expr::MethodCall {
+                            object: Box::new(expr),
+                            method: member,
+                            args,
+                        };
+                        continue;
+                    }
+
+                    // assignment: self.field = value
+                    if self.check(TokenKind::Equal) {
+                        self.advance(); // consume '='
+                        let value = self.expression()?;
+
+                        return Ok(Expr::MemberAssign {
+                            object: Box::new(expr),
+                            member,
+                            value: Box::new(value),
+                        });
+                    }
+
+                    // access: self.field
+                    expr = Expr::MemberAccess {
+                        object: Box::new(expr),
+                        member,
+                    };
+                }
+
+                Ok(expr)
+            }
+
             TokenKind::Identifier => self.scan_identifier(),
 
             _ => Err(self.error("Expect expression")),
@@ -826,64 +947,169 @@ impl Parser {
 
     //==========================================================
     // Grammer
+    //==========================================================
+
     fn scan_identifier(&mut self) -> Result<Expr, ParseError> {
         let identifier: String = self.peek().lexeme.clone();
-        self.advance();
+        self.advance(); // consume the identifier
 
         match self.peek().kind {
-            /*
-                Function Call
-                call(src=[34, 34])
-                call(src["Hello From", "Danishk"])
-            */
+            // ---------------------------------------------------
+            // Struct / Static call: student::new(...)
+            // ---------------------------------------------------
+            TokenKind::ColonColon => {
+                self.advance(); // consume '::'
+
+                // IMPORTANT FIX:
+                // after '::' allow either Identifier OR keyword 'new'
+                let method_name: String = if self.check(TokenKind::Identifier) {
+                    self.advance().lexeme.clone()
+                } else if self.check(TokenKind::New) {
+                    // if your token is named New_ or NEW, change it accordingly
+                    self.advance(); // consume 'new'
+                    "new".to_string()
+                } else {
+                    return Err(self.error(
+                        format!(
+                            "Expected Identifier at line {}. Expected method name after '::'",
+                            self.peek().line
+                        )
+                        .as_str(),
+                    ));
+                };
+
+                self.consume(TokenKind::LeftParen, "Expected '(' after method name")?;
+
+                let mut args: Vec<Expr> = Vec::new();
+                while !self.check(TokenKind::RightParen) {
+                    args.push(self.expression()?);
+
+                    if !self.matches(&[TokenKind::Comma]) {
+                        break;
+                    }
+                }
+
+                self.consume(TokenKind::RightParen, "Expected ')' after arguments")?;
+
+                Ok(Expr::StructInstantiation {
+                    struct_name: identifier,
+                    method_name,
+                    args,
+                })
+            }
+
+            // ---------------------------------------------------
+            // Member access / method call / member assign:
+            // obj.member, obj.method(...), obj.member = value
+            // ---------------------------------------------------
+            TokenKind::Dot => {
+                let mut expr = Expr::Variable { name: identifier };
+
+                while self.matches(&[TokenKind::Dot]) {
+                    let member = self.consume_identifier("Expected member name after '.'")?;
+
+                    if self.check(TokenKind::LeftParen) {
+                        // Method call: obj.method(...)
+                        self.advance(); // consume '('
+
+                        let mut args = Vec::new();
+                        while !self.check(TokenKind::RightParen) {
+                            args.push(self.expression()?);
+
+                            if !self.matches(&[TokenKind::Comma]) {
+                                break;
+                            }
+                        }
+
+                        self.consume(TokenKind::RightParen, "Expected ')' after method arguments")?;
+
+                        expr = Expr::MethodCall {
+                            object: Box::new(expr),
+                            method: member,
+                            args,
+                        };
+                    } else if self.check(TokenKind::Equal) {
+                        // Member assignment: obj.member = value
+                        self.advance(); // consume '='
+                        let value = self.expression()?;
+
+                        return Ok(Expr::MemberAssign {
+                            object: Box::new(expr),
+                            member,
+                            value: Box::new(value),
+                        });
+                    } else {
+                        // Member access: obj.member
+                        expr = Expr::MemberAccess {
+                            object: Box::new(expr),
+                            member,
+                        };
+                    }
+                }
+
+                Ok(expr)
+            }
+
+            // ---------------------------------------------------
+            // Function call with named params:
+            // foo(a=1, b=2)
+            // ---------------------------------------------------
             TokenKind::LeftParen => {
                 let mut args_map: Vec<(String, Expr)> = Vec::new();
-                self.advance();
+                self.advance(); // consume '('
+
                 while !self.check(TokenKind::RightParen) {
                     let name: String = self
                         .consume(
                             TokenKind::Identifier,
                             "Expected 'Identifier' for mapping args to parameters",
-                        )
-                        .unwrap()
+                        )?
                         .lexeme;
+
                     self.consume(
                         TokenKind::Equal,
                         "Expected '=' to differentiate name and expression",
-                    )
-                    .unwrap();
+                    )?;
+
                     let value: Expr = self.expression()?;
                     args_map.push((name, value));
 
                     if self.check(TokenKind::Comma) {
-                        self.advance(); // ',' skip
+                        self.advance();
                     } else {
                         break;
                     }
                 }
-                self.consume(
-                    TokenKind::RightParen,
-                    "Expected ')' to enclose function call",
-                )
-                .unwrap();
+
+                self.consume(TokenKind::RightParen, "Expected ')' to enclose function call")?;
+
                 Ok(Expr::FunctionCall {
                     function: identifier,
                     args: args_map,
                 })
             }
 
+            // ---------------------------------------------------
+            // Variable assignment: x = expr
+            // ---------------------------------------------------
             TokenKind::Equal => {
-                self.advance();
+                self.advance(); // consume '='
                 let value: Expr = self.expression()?;
+
                 Ok(Expr::AllocateVariable {
                     name: identifier,
                     val: Box::new(value),
                 })
             }
 
+            // ---------------------------------------------------
+            // Just a variable reference
+            // ---------------------------------------------------
             _ => Ok(Expr::Variable { name: identifier }),
         }
     }
+//==========================================================
+
     //==========================================================
 
     // =========================================================

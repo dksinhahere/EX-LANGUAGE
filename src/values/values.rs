@@ -1,5 +1,5 @@
 use crate::interpreter::error::{RuntimeError, RuntimeErrorKind, RuntimeResult};
-use crate::parser::ast::Stmt;
+use crate::parser::ast::{Stmt, StructMethod};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
@@ -8,13 +8,28 @@ pub struct Function {
     pub params: Vec<String>,
     pub defaults: Vec<String>,
     pub body: Vec<Stmt>,
-    pub visible_blocks: Vec<String>, // Names of visible blocks this function can access
+    pub visible_blocks: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ControlFlow {
     pub name: String,
     pub body: Vec<Stmt>,
+}
+
+// NEW: Struct definition type
+#[derive(Debug, Clone)]
+pub struct StructDef {
+    pub name: String,
+    pub methods: Vec<StructMethod>,
+}
+
+// NEW: Struct instance type
+#[derive(Debug, Clone)]
+pub struct StructInstance {
+    pub struct_name: String,
+    pub fields: HashMap<String, Value>,
+    pub methods: Vec<StructMethod>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -29,6 +44,8 @@ pub enum Value {
     Function(Function),
     ControlFlow(ControlFlow),
     Array(Vec<Value>),
+    StructDef(StructDef),           // NEW: Struct definition
+    StructInstance(StructInstance), // NEW: Struct instance
 }
 
 impl PartialEq for Function {
@@ -40,6 +57,20 @@ impl PartialEq for Function {
 impl PartialEq for ControlFlow {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
+    }
+}
+
+// NEW: PartialEq for StructDef
+impl PartialEq for StructDef {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+    }
+}
+
+// NEW: PartialEq for StructInstance
+impl PartialEq for StructInstance {
+    fn eq(&self, other: &Self) -> bool {
+        self.struct_name == other.struct_name && self.fields == other.fields
     }
 }
 
@@ -56,6 +87,8 @@ impl Value {
             Value::Function(_) => true,
             Value::ControlFlow(_) => true,
             Value::Array(arr) => !arr.is_empty(),
+            Value::StructDef(_) => true,        // NEW
+            Value::StructInstance(_) => true,   // NEW
         }
     }
 
@@ -71,6 +104,8 @@ impl Value {
             Value::Function(_) => "Function",
             Value::ControlFlow(_) => "ControlFlow",
             Value::Array(_) => "Array",
+            Value::StructDef(_) => "StructDef",                    // NEW
+            Value::StructInstance(inst) => &inst.struct_name,      // NEW: return actual struct name
         }
     }
 }

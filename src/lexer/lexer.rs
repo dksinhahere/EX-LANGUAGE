@@ -646,6 +646,11 @@ impl Lexer {
             "_endif_" => (TokenKind::ENDIF, None),
             "_undef_" => (TokenKind::UNDEF, None),
 
+            "struct" => (TokenKind::Struct, None),
+            "constructor" => (TokenKind::Constructor, None),
+            "new" => (TokenKind::New, None),
+            "self" => (TokenKind::Self_, None),
+
             _ => (
                 TokenKind::Identifier,
                 Some(Literal::Identifier(text.clone())),

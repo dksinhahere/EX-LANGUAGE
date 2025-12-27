@@ -1,7 +1,19 @@
 use crate::lexer::Token;
 
 #[derive(Debug, Clone)]
+pub struct StructMethod {
+    pub name: String,
+    pub params: Vec<String>,
+    pub body: Vec<Stmt>,
+}
+
+#[derive(Debug, Clone)]
 pub enum Stmt {
+
+    StructDef {
+        name: String,
+        methods: Vec<StructMethod>,
+    },
     Expression(Expr),
     SmartLock {
         variable: String,
@@ -52,6 +64,27 @@ pub enum Stmt {
 
 #[derive(Debug, Clone)]
 pub enum Expr {
+
+    StructInstantiation {
+        struct_name: String,
+        method_name: String, // typically "new"
+        args: Vec<Expr>,
+    },
+    MemberAccess {
+        object: Box<Expr>,
+        member: String,
+    },
+    MemberAssign {
+        object: Box<Expr>,
+        member: String,
+        value: Box<Expr>,
+    },
+    MethodCall {
+        object: Box<Expr>,
+        method: String,
+        args: Vec<Expr>,
+    },
+
     Binary {
         left: Box<Expr>,
         operator: Token,

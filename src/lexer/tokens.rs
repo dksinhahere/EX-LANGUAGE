@@ -93,6 +93,10 @@ pub enum TokenKind {
     UNDEF,
     Visit,
     Visible,
+    Struct,      // struct keyword
+    Constructor, // constructor keyword
+    New,         // new keyword (for instantiation)
+    Self_,       // self keyword
 
 }
 
