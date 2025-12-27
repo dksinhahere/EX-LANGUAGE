@@ -61,6 +61,10 @@ pub enum Expr {
         operator: Token,
         right: Box<Expr>,
     },
+    MacroCall {
+        var: Vec<Expr>,
+        body: Vec<Stmt>
+    },
     _Literal_(Literal),
     Grouping(Box<Expr>),
     Print(Box<Expr>),

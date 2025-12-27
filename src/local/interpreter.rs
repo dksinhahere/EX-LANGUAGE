@@ -26,15 +26,26 @@ impl CommandInterpreter {
 
     pub fn execute(&mut self, command: Command) -> ExecutionResult {
         match command {
+            Command::Chain { commands } => {
+                // Execute commands in sequence, stop if any fails
+                for cmd in commands {
+                    match self.execute(cmd) {
+                        ExecutionResult::Exit => return ExecutionResult::Exit,
+                        ExecutionResult::Continue => continue,
+                    }
+                }
+                ExecutionResult::Continue
+            }
+
             Command::Exit => ExecutionResult::Exit,
-            
+
             Command::Chd { directory } => {
                 if let Err(e) = env::set_current_dir(&directory) {
                     eprintln!("Error changing directory: {}", e);
                 }
                 ExecutionResult::Continue
             }
-            
+
             Command::Cud => {
                 match env::current_dir() {
                     Ok(path) => println!("{}", path.display()),
@@ -42,30 +53,30 @@ impl CommandInterpreter {
                 }
                 ExecutionResult::Continue
             }
-            
+
             Command::Clean => {
                 print!("\x1B[2J\x1B[1;1H");
                 io::stdout().flush().unwrap();
                 ExecutionResult::Continue
             }
-            
+
             Command::ExecCode { code } => {
                 if !code.is_empty() {
                     self.run_ex_source(&code);
                 }
                 ExecutionResult::Continue
             }
-            
+
             Command::LocalExec { path, args } => {
                 self.execute_local_path(&path, &args);
                 ExecutionResult::Continue
             }
-            
+
             Command::SystemCommand { command, args } => {
                 self.execute_system_command(&command, &args);
                 ExecutionResult::Continue
             }
-            
+
             Command::Empty => ExecutionResult::Continue,
         }
     }

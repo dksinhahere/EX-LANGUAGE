@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::fmt::Arguments;
+
 use crate::lexer::{Token, TokenKind};
 use crate::parser::ast::{Expr, Literal, Stmt};
 
@@ -11,6 +14,7 @@ pub struct Parser {
     tokens: Vec<Token>,
     current: usize,
     errors: Vec<ParseError>,
+    macro_map: HashMap<String, (Vec<String>, Vec<Stmt>)>,
 }
 
 impl Parser {
@@ -23,6 +27,7 @@ impl Parser {
             tokens,
             current: 0,
             errors: Vec::new(),
+            macro_map: HashMap::new(),
         }
     }
 
@@ -139,8 +144,118 @@ impl Parser {
 
             TokenKind::Visible => self.def_visible_block(),
 
+            TokenKind::DEFINE => {
+                self.advance();
+                self.define_macro()
+            }
+            TokenKind::IFNDEF => {
+                self.advance();
+                self.ifndef_macro()
+            }
+            TokenKind::UNDEF => {
+                self.advance();
+                self.undef_macro()
+            }
+
             _ => self.expression_statement(),
         }
+    }
+
+    fn undef_macro(&mut self) -> Result<Stmt, ParseError> {
+        let macro_name = self.consume_identifier("Expected Macro name after _undef_ keyword")?;
+        if self.macro_map.contains_key(&macro_name) {
+            self.macro_map.remove(&macro_name);
+        } else {
+            return Err(self.error(
+                format!("_undef_ {}, but macro not define in this scope", macro_name).as_str(),
+            ));
+        }
+        Ok(Stmt::Pass)
+    }
+
+    fn ifndef_macro(&mut self) -> Result<Stmt, ParseError> {
+        let macro_name = self.consume_identifier("Expected Macro Name")?;
+
+        if !self.macro_map.contains_key(&macro_name) {
+            // Macro NOT defined - define macros inside the block
+            while !self.check(TokenKind::ENDIF) && !self.is_at_end() {
+                self.consume(TokenKind::DEFINE, "Expected '_macro_' keyword")?;
+                self.define_macro()?;
+            }
+            self.consume(TokenKind::ENDIF, "Expected 'ENDIF' to close 'IFNDEF' block")?;
+            Ok(Stmt::Pass)
+        } else {
+            // Macro IS defined - skip everything until ENDIF
+            while !self.check(TokenKind::ENDIF) && !self.is_at_end() {
+                self.skip_macro()?; // Skip each macro definition
+            }
+            self.consume(TokenKind::ENDIF, "Expected 'ENDIF' to close 'IFNDEF' block")?;
+
+            Ok(Stmt::Pass) // Added return value
+        }
+    }
+
+    fn skip_macro(&mut self) -> Result<Stmt, ParseError> {
+        self.consume_identifier("Expected Macro Name")?;
+
+        self.consume(TokenKind::LeftParen, "Expected '(' for macro parameters")?;
+        while !self.check(TokenKind::RightParen) {
+            self.consume_identifier("Expected 'identifier' as macro parameters")?;
+
+            // Optional: handle comma separation
+            if self.check(TokenKind::Comma) {
+                self.advance();
+            }
+        }
+        self.consume(
+            TokenKind::RightParen,
+            "Expected ')' to enclose macro parameters",
+        )?;
+        self.consume(TokenKind::LeftBracket, "Expected '[' to enclose macro body")?;
+
+        while !self.check(TokenKind::RightBracket) {
+            self.statement()?;
+        }
+        self.consume(
+            TokenKind::RightBracket,
+            "Expected ']' to enclose macro body",
+        )?; // Fixed: was RightParen
+
+        Ok(Stmt::Pass)
+    }
+
+    fn define_macro(&mut self) -> Result<Stmt, ParseError> {
+        let macro_name = self.consume_identifier("Expected Macro Name")?;
+        let mut macro_param: Vec<String> = Vec::new();
+
+        self.consume(TokenKind::LeftParen, "Expected '(' for macro parameters")?;
+        while !self.check(TokenKind::RightParen) {
+            macro_param.push(self.consume_identifier("Expected 'identifier' as macro parameters")?);
+
+            // Optional: handle comma separation
+            if self.check(TokenKind::Comma) {
+                self.advance();
+            }
+        }
+        self.consume(
+            TokenKind::RightParen,
+            "Expected ')' to enclose macro parameters",
+        )?;
+
+        self.consume(TokenKind::LeftBracket, "Expected '[' to enclose macro body")?;
+        let mut macro_body: Vec<Stmt> = Vec::new();
+        while !self.check(TokenKind::RightBracket) {
+            macro_body.push(self.statement()?);
+        }
+        self.consume(
+            TokenKind::RightBracket,
+            "Expected ']' to enclose macro body",
+        )?; // Fixed: was RightParen
+
+        let _macro_: (Vec<String>, Vec<Stmt>) = (macro_param, macro_body);
+        self.macro_map.insert(macro_name, _macro_);
+
+        Ok(Stmt::Pass)
     }
 
     fn def_visible_block(&mut self) -> Result<Stmt, ParseError> {
@@ -154,7 +269,6 @@ impl Parser {
         let mut block: Vec<(String, Expr)> = Vec::new();
 
         while !self.check(TokenKind::RightParen) {
-
             let identifier = self.consume_identifier("Expected 'Identifier' as variable name")?;
             self.consume(TokenKind::Equal, "Expected '=' after variable name")?;
             let value: Expr = self.expression()?;
@@ -174,7 +288,6 @@ impl Parser {
             _block_: block,
         })
     }
-
 
     fn while_loop(&mut self) -> Result<Stmt, ParseError> {
         self.advance(); // consume 'while'
@@ -654,6 +767,55 @@ impl Parser {
                 self.advance();
                 let expr = self.expression()?;
                 Ok(Expr::Print(Box::new(expr)))
+            }
+
+            TokenKind::Hash => {
+                self.advance();
+                let macro_name = self
+                    .consume_identifier("Expected 'Identifier as macro name'")
+                    .unwrap();
+                let mut args: Vec<Expr> = Vec::new();
+
+                if self.macro_map.contains_key(&macro_name) {
+                    self.consume(TokenKind::LeftParen, "Expected '(' to capture macro args")?;
+                    while !self.check(TokenKind::RightParen) {
+                        args.push(self.expression()?);
+                        if self.matches(&[TokenKind::Comma]) {
+                            continue;
+                        }
+                        break;
+                    }
+                    self.consume(
+                        TokenKind::RightParen,
+                        "Expected ')' to enclose macro arguments",
+                    )?;
+
+                    let macro_body = match self.macro_map.get(&macro_name) {
+                        Some(body) => body,
+                        None => {
+                            return Err(self.error(&format!("undefined macro {}", macro_name)));
+                        }
+                    };
+                    let (macro_params, macro_stmts) = macro_body;
+
+                    let mut variables: Vec<Expr> = Vec::new();
+                    for (_param_, _arg_) in macro_params.iter().zip(args) {
+                        variables.push(Expr::AllocateVariable {
+                            name: _param_.clone(),
+                            val: Box::new(_arg_),
+                        });
+                    }
+
+                    Ok(Expr::MacroCall {
+                        var: variables,
+                        body: macro_stmts.clone(),
+                    })
+                } else {
+                    Err(self.error(&format!(
+                        "Macro {} is not define anywhere in code",
+                        macro_name
+                    )))
+                }
             }
 
             TokenKind::Identifier => self.scan_identifier(),

@@ -1,3 +1,5 @@
+use crate::lexer::TokenKind;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenType {
     // Built-in commands
@@ -5,6 +7,7 @@ pub enum TokenType {
     Cud,
     Clean,
     Exit,
+    AndAnd,
     ExecMarker, // >>
     
     // Identifiers and literals
@@ -82,6 +85,14 @@ impl Lexer {
         // Check for local path (./)
         if self.current_char() == '.' && self.peek(1) == '/' {
             return Some(self.read_local_path());
+        }
+
+        if self.current_char() == '&' && self.peek(1) == '&' {
+            self.position += 2;
+            return Some(Token {
+                token_type: TokenType::AndAnd,
+                lexeme: "&&".to_string()
+            });
         }
 
         // Read word

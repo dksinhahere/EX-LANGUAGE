@@ -1,13 +1,13 @@
 
-#ifndef SUM
+_ifndef_ SUM
 
-#define SUM(x, y) [
-    kprint(x + " " + y)
+_define_ SUM(x, y) [
+    kprint(x + y)
 ]
 
-#endif
+_endif_
 
-kprint SUM(3, 4)
+#SUM(3, 4)
 
-#undef SUM
+_undef_ SUM
 

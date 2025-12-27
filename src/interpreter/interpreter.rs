@@ -267,6 +267,17 @@ impl Interpreter {
 
             Expr::Grouping(inner) => self.eval(inner),
 
+            Expr::MacroCall { var, body } => {
+                for item in var.iter() {
+                    self.eval(item)?;
+                }
+                for stmt in body.iter() {
+                    self.execute(stmt)?;
+                }
+
+                Ok(Value::Bool(true))
+            }
+
             Expr::Iterable { value } => {
                 let mut out = Vec::new();
                 for e in value {

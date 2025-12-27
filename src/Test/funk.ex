@@ -4,7 +4,7 @@ visible some {
     fabchar = 'C'
 }
 
-label greeting(name=uname, age=uage) visit[some] {
+label visit[some], greeting(name=uname, age=uage) {
     kprint uname + " How are You, " + uage
 
     label some(src=data) {
