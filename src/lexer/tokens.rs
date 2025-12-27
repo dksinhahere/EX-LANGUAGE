@@ -100,7 +100,6 @@ pub enum TokenKind {
     D,
     L,
     A,
-    Function
 
 }
 

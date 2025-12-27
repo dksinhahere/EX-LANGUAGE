@@ -53,17 +53,21 @@ pub enum Stmt {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
 
-    DictionaryAccess {
-        dict:String,
-        member:Box<Expr>
+    Array {
+        elements:Vec<Expr>
+    },
+
+    Axis {
+        elements: Vec<Expr>
+    },
+
+    Access {
+        ds:String,
+        member:Vec<Expr>
     },
 
     Dictionary(Vec<(Expr, Expr)>),
-    Function {
-        name:Box<Expr>,
-        params: Vec<String>,
-        body: Vec<Stmt>,
-    },
+    
     Binary {
         left: Box<Expr>,
         operator: Token,

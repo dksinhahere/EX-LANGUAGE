@@ -31,6 +31,7 @@ pub enum Value {
     ControlFlow(ControlFlow),
     Array(Vec<Value>),
     Dictionary(HashMap<String, Value>),
+    Axis(Vec<Value>)
 }
 
 impl PartialEq for Function {
@@ -60,6 +61,7 @@ impl Value {
             Value::ControlFlow(_) => true,
             Value::Array(arr) => !arr.is_empty(),
             Value::Dictionary(dict) => !dict.is_empty(),
+            Value::Axis(ax) => !ax.is_empty()
         }
     }
 
@@ -76,7 +78,7 @@ impl Value {
             Value::ControlFlow(_) => "ControlFlow",
             Value::Array(_) => "Array",
             Value::Dictionary(_) => "Dictionary",
-            
+            Value::Axis(_) => "Axis"
         }
     }
 }

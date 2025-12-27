@@ -653,7 +653,6 @@ impl Lexer {
             "d" => (TokenKind::D, None),
             "l" => (TokenKind::L, None),
             "a" => (TokenKind::A, None),
-            "function" => (TokenKind::Function, None),
 
             _ => (
                 TokenKind::Identifier,

@@ -1,19 +1,16 @@
 use crate::interpreter::interpreter::Interpreter;
-use crate::parser::ast::Expr;
 use crate::interpreter::{RuntimeError, RuntimeErrorKind, RuntimeResult};
+use crate::lexer::TokenKind;
+use crate::parser::ast::Expr;
+use crate::values::values::Function;
 use crate::values::values::Value;
 use std::collections::HashMap;
-use crate::values::values::Function;
-use crate::lexer::TokenKind;
 
 impl Interpreter {
-
-        pub(crate) fn eval(&mut self, expr: &Expr) -> RuntimeResult<Value> {
+    pub(crate) fn eval(&mut self, expr: &Expr) -> RuntimeResult<Value> {
         match expr {
             Expr::_Literal_(lit) => Ok(self.literal_to_value(lit)),
-
             Expr::Grouping(inner) => self.eval(inner),
-
             Expr::MacroCall { var, body } => {
                 for item in var.iter() {
                     self.eval(item)?;
@@ -23,57 +20,140 @@ impl Interpreter {
                 }
 
                 Ok(Value::Bool(true))
-            },
+            }
 
-            Expr::DictionaryAccess { dict, member } => {
-                // Get the dictionary value
-                let dict_value = self.environment.get(dict)?;
-                
-                // Ensure it's actually a dictionary
-                let dict_map = match dict_value {
-                    Value::Dictionary(map) => map,
-                    other => return Err(RuntimeError::custom(
-                        format!("Expected Dictionary, got {}", other.type_name())
-                    )),
-                };
 
-                // Evaluate member expression and convert to string key
-                let member_key = match self.eval(member)? { // Use ? instead of unwrap
-                    Value::String(s) => s,
-                    Value::Int(i) => i.to_string(),
-                    Value::Float(f) => f.to_string(),
-                    Value::Bool(b) => b.to_string(),
-                    Value::Char(c) => c.to_string(),
-                    other => return Err(RuntimeError::custom(
-                        format!("Dictionary keys must be primitive types, got {}", other.type_name())
-                    )),
-                };
-
-                // Get the value from the dictionary
-                let value = dict_map.get(&member_key)
-                    .ok_or_else(|| RuntimeError::custom(
-                        format!("Key '{}' not found in dictionary", member_key)
-                    ))?;
-
-                // If it's a function, execute it; otherwise return the value
-                match value {
-                    Value::Function(func) => {
-                        // Execute the function with no arguments
-                        self.environment.push_scope();
-                        
-                        // Execute all statements in the function body
-                        for stmt in &func.body {
-                            self.execute(stmt)?; // execute returns (), not Value
-                        }
-                        
-                        self.environment.pop_scope();
-                        
-                        // For now, return Nil since functions don't have explicit return values
-                        Ok(Value::Nil)
-                    }
-                    other => Ok(other.clone()),
+            Expr::Array { elements } => {
+                let mut arr = Vec::new();
+                for element in elements {
+                    let value = self.eval(element)?;
+                    arr.push(value);
                 }
-            },
+                Ok(Value::Array(arr))
+            }
+
+            Expr::Axis { elements } => {
+                let mut axis = Vec::new();
+                for element in elements {
+                    let value = self.eval(element)?;
+                    axis.push(value);
+                }
+                Ok(Value::Axis(axis))
+            }
+
+            #[allow(clippy::needless_return)]
+            Expr::Access { ds, member } => {
+                // Start from the root value
+                let mut current = self.environment.get(ds)?;
+
+                // Helper: convert Value -> dictionary key string
+                let to_dict_key = |v: Value| -> RuntimeResult<String> {
+                    Ok(match v {
+                        Value::Int(i) => i.to_string(),
+                        Value::String(s) => s,
+                        Value::Float(f) => f.to_string(),
+                        Value::Bool(b) => b.to_string(),
+                        Value::Char(ch) => ch.to_string(),
+                        Value::BigInt(bi) => bi, // assuming BigInt is stored as String in your Value
+                        _ => {
+                            return Err(RuntimeError::custom(format!(
+                                "Invalid key type for dictionary access: {}",
+                                v.type_name()
+                            )));
+                        }
+                    })
+                };
+
+                // Helper: resolve negative indexing
+                let resolve_index = |idx: i128, len: usize, what: &str| -> RuntimeResult<usize> {
+                    if len == 0 {
+                        return Err(RuntimeError::custom(format!("Index {} out of bounds for {} of length 0", idx, what)));
+                    }
+
+                    if idx < 0 {
+                        let l = len as i128;
+                        if idx.abs() > l {
+                            return Err(RuntimeError::custom(format!(
+                                "Index {} out of bounds for {} of length {}",
+                                idx, what, len
+                            )));
+                        }
+                        Ok((l + idx) as usize)
+                    } else {
+                        let u = idx as usize;
+                        if u >= len {
+                            return Err(RuntimeError::custom(format!(
+                                "Index {} out of bounds for {} of length {}",
+                                idx, what, len
+                            )));
+                        }
+                        Ok(u)
+                    }
+                };
+
+                for item in member.iter() {
+                    let accessor = self.eval(item)?;
+
+                    current = match current {
+                        Value::Dictionary(dict) => {
+                            let key = to_dict_key(accessor)?;
+                            dict.get(&key).cloned().ok_or_else(|| {
+                                RuntimeError::custom(format!("Key '{}' not found in dictionary", key))
+                            })?
+                        }
+
+                        Value::Array(arr) => {
+                            let idx = match accessor {
+                                Value::Int(i) => i,
+                                _ => {
+                                    return Err(RuntimeError::custom(format!(
+                                        "Array index must be integer, got {}",
+                                        accessor.type_name()
+                                    )));
+                                }
+                            };
+
+                            let actual = resolve_index(idx, arr.len(), "array")?;
+                            arr.get(actual).cloned().ok_or_else(|| {
+                                RuntimeError::custom(format!(
+                                    "Index {} out of bounds for array of length {}",
+                                    idx, arr.len()
+                                ))
+                            })?
+                        }
+
+                        Value::Axis(axis) => {
+                            let idx = match accessor {
+                                Value::Int(i) => i,
+                                _ => {
+                                    return Err(RuntimeError::custom(format!(
+                                        "Axis index must be integer, got {}",
+                                        accessor.type_name()
+                                    )));
+                                }
+                            };
+
+                            let actual = resolve_index(idx, axis.len(), "axis")?;
+                            axis.get(actual).cloned().ok_or_else(|| {
+                                RuntimeError::custom(format!(
+                                    "Index {} out of bounds for axis of length {}",
+                                    idx, axis.len()
+                                ))
+                            })?
+                        }
+
+                        other => {
+                            return Err(RuntimeError::custom(format!(
+                                "Cannot access member on type '{}'",
+                                other.type_name()
+                            )));
+                        }
+                    };
+                }
+
+                Ok(current)
+            }
+
 
             Expr::Dictionary(entries) => {
                 let mut dict_map: HashMap<String, Value> = HashMap::new();
@@ -81,7 +161,7 @@ impl Interpreter {
                 for (key_expr, value_expr) in entries {
                     // Evaluate the key
                     let key_value = self.eval(key_expr)?;
-                    
+
                     // Convert key to string
                     let key_str = match key_value {
                         Value::String(s) => s,
@@ -89,41 +169,21 @@ impl Interpreter {
                         Value::Float(f) => f.to_string(),
                         Value::Bool(b) => b.to_string(),
                         Value::Char(c) => c.to_string(),
-                        _ => return Err(RuntimeError::custom(
-                            format!("Dictionary keys must be primitive types, got {}", key_value.type_name())
-                        )),
+                        _ => {
+                            return Err(RuntimeError::custom(format!(
+                                "Dictionary keys must be primitive types, got {}",
+                                key_value.type_name()
+                            )));
+                        }
                     };
 
                     // Evaluate the value
                     let value = self.eval(value_expr)?;
-                    
+
                     dict_map.insert(key_str, value);
                 }
 
                 Ok(Value::Dictionary(dict_map))
-            }
-
-            #[allow(clippy::useless_format)]
-            Expr::Function { name, params, body } => {
-                // Create an anonymous function value
-                let key_str:String = match self.eval(name).unwrap() {
-                    Value::String(s) => s,
-                    Value::Int(i) => i.to_string(),
-                    Value::Float(f) => f.to_string(),
-                    Value::Bool(b) => b.to_string(),
-                    Value::Char(c) => c.to_string(),
-                    _ => return Err(RuntimeError::custom(
-                            format!("Dictionary keys must be primitive types")
-                    )),
-                };
-
-                Ok(Value::Function(Function {
-                    name: key_str,
-                    params: params.clone(),
-                    defaults: params.clone(),
-                    body: body.clone(),
-                    visible_blocks: Vec::new(),
-                }))
             }
 
             Expr::Iterable { value } => {
@@ -254,8 +314,6 @@ impl Interpreter {
                 }
                 Ok(Value::Nil)
             }
-
-            
 
             Expr::FunctionCall { function, args } => {
                 // Get function from environment

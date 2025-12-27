@@ -641,6 +641,8 @@ impl Parser {
 
     fn consume_dataset(&mut self) -> Result<Expr, ParseError> {
         // [&d, ] -> dictionary
+        // [&l, ] -> array/list
+        // [&a, ] -> axis (const vector)
         self.advance();
         self.consume(TokenKind::Ampersand, "Expected '&' after '['")?;
 
@@ -649,7 +651,7 @@ impl Parser {
                 self.advance();
                 self.consume(TokenKind::Comma, "Expected ',' after [&d] as [&d, ...]")?;
 
-                let mut entries: Vec<(Expr, Expr)> = Vec::new(); // Changed from HashMap
+                let mut entries: Vec<(Expr, Expr)> = Vec::new();
 
                 while !self.check(TokenKind::RightBracket) {
                     // Parse the key
@@ -660,29 +662,9 @@ impl Parser {
                     )?;
 
                     // Parse the value (either a function or expression)
-                    let value = if self.matches(&[TokenKind::Function]) {
-                        // Parse anonymous function without parameters
-                        self.consume(TokenKind::LeftBrace, "Expected '{' after 'function'")?;
+                    let value = self.expression()?;
 
-                        let mut body: Vec<Stmt> = Vec::new();
-                        while !self.check(TokenKind::RightBrace) && !self.is_at_end() {
-                            body.push(self.declaration()?);
-                        }
-
-                        self.consume(TokenKind::RightBrace, "Expected '}' after function body")?;
-
-                        // Create function expression with empty parameters
-                        Expr::Function {
-                            name: Box::new(key.clone()),
-                            params: Vec::new(),
-                            body,
-                        }
-                    } else {
-                        // Parse regular expression as value
-                        self.expression()?
-                    };
-
-                    entries.push((key, value)); // Changed from dict.insert()
+                    entries.push((key, value));
 
                     // Handle comma separation between key-value pairs
                     if !self.check(TokenKind::RightBracket) {
@@ -695,10 +677,60 @@ impl Parser {
                     "Expected ']' after dictionary entries",
                 )?;
 
-                Ok(Expr::Dictionary(entries)) // Changed from dict
+                Ok(Expr::Dictionary(entries))
             }
 
-            _ => Err(self.error("Expected 'd' after '&' in dictionary syntax")),
+            TokenKind::L => {
+                self.advance();
+                self.consume(TokenKind::Comma, "Expected ',' after [&l] as [&l, ...]")?;
+
+                let mut elements: Vec<Expr> = Vec::new();
+
+                while !self.check(TokenKind::RightBracket) {
+                    // Parse each element expression
+                    let element = self.expression()?;
+                    elements.push(element);
+
+                    // Handle comma separation between elements
+                    if !self.check(TokenKind::RightBracket) {
+                        self.consume(TokenKind::Comma, "Expected ',' between array elements")?;
+                    }
+                }
+
+                self.consume(
+                    TokenKind::RightBracket,
+                    "Expected ']' after array elements",
+                )?;
+
+                Ok(Expr::Array{elements})
+            }
+
+            TokenKind::A => {
+                self.advance();
+                self.consume(TokenKind::Comma, "Expected ',' after [&a] as [&a, ...]")?;
+
+                let mut elements: Vec<Expr> = Vec::new();
+
+                while !self.check(TokenKind::RightBracket) {
+                    // Parse each element expression
+                    let element = self.expression()?;
+                    elements.push(element);
+
+                    // Handle comma separation between elements
+                    if !self.check(TokenKind::RightBracket) {
+                        self.consume(TokenKind::Comma, "Expected ',' between axis elements")?;
+                    }
+                }
+
+                self.consume(
+                    TokenKind::RightBracket,
+                    "Expected ']' after axis elements",
+                )?;
+
+                Ok(Expr::Axis{elements})
+            }
+
+            _ => Err(self.error("Expected 'd', 'l', or 'a' after '&' in dataset syntax")),
         }
     }
 
@@ -898,18 +930,27 @@ impl Parser {
         self.advance(); // consume the identifier
 
         match self.peek().kind {
-            // dict["Key"]
-            
+        
             TokenKind::LeftBracket => {
-                self.advance();
-                let node = self.expression()?;
-                self.consume(
-                    TokenKind::RightBracket,
-                    "Expepected ']' to enclose dictionay invocation",
-                )?;
-                Ok(Expr::DictionaryAccess {
-                    dict: identifier,
-                    member: Box::new(node),
+                self.advance(); // consume '['
+                let mut indices: Vec<Expr> = Vec::new();
+                
+                // Parse first index
+                indices.push(self.expression()?);
+                
+                // Consume the closing ']'
+                self.consume(TokenKind::RightBracket, "Expected ']' after index")?;
+                
+                // Check for chained access: x["key1"]["key2"]
+                while self.check(TokenKind::LeftBracket) {
+                    self.advance(); // consume '['
+                    indices.push(self.expression()?);
+                    self.consume(TokenKind::RightBracket, "Expected ']' after index")?;
+                }
+                
+                Ok(Expr::Access {
+                    ds: identifier,
+                    member: indices,
                 })
             }
 
