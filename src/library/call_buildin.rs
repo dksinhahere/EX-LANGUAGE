@@ -98,6 +98,64 @@ impl Interpreter {
                 Some(Self::cast_type(value, target_type))
             }
 
+            "array_new" => Some(Self::array_new()),
+            "array_len" => Some(Self::array_len(args.get("src")?.clone())),
+            "array_is_empty" => Some(Self::array_is_empty(args.get("src")?.clone())),
+
+            "array_get" => Some(Self::array_get(
+                args.get("src")?.clone(),
+                args.get("idx")?.clone(),
+            )),
+            "array_set" => Some(Self::array_set(
+                args.get("src")?.clone(),
+                args.get("idx")?.clone(),
+                args.get("value")?.clone(),
+            )),
+
+            "array_push" => Some(Self::array_push(
+                args.get("src")?.clone(),
+                args.get("value")?.clone(),
+            )),
+            "array_pop" => Some(Self::array_pop(args.get("src")?.clone())),
+
+            "array_insert" => Some(Self::array_insert(
+                args.get("src")?.clone(),
+                args.get("idx")?.clone(),
+                args.get("value")?.clone(),
+            )),
+            "array_remove" => Some(Self::array_remove(
+                args.get("src")?.clone(),
+                args.get("idx")?.clone(),
+            )),
+
+            "array_clear" => Some(Self::array_clear(args.get("src")?.clone())),
+            "array_clone" => Some(Self::array_clone(args.get("src")?.clone())),
+
+            "array_slice" => Some(Self::array_slice(
+                args.get("src")?.clone(),
+                args.get("start")?.clone(),
+                args.get("end")?.clone(),
+            )),
+
+            "array_concat" => Some(Self::array_concat(
+                args.get("a")?.clone(),
+                args.get("b")?.clone(),
+            )),
+
+            "array_reverse" => Some(Self::array_reverse(args.get("src")?.clone())),
+            "array_sort" => Some(Self::array_sort(args.get("src")?.clone())),
+
+            "array_find" => Some(Self::array_find(
+                args.get("src")?.clone(),
+                args.get("value")?.clone(),
+            )),
+
+            "array_contains" => Some(Self::array_contains(
+                args.get("src")?.clone(),
+                args.get("value")?.clone(),
+            )),
+
+
             _ => None,
         }
     }
