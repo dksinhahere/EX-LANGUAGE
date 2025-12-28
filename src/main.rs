@@ -7,6 +7,8 @@ mod lexer;
 mod local;
 mod parser;
 mod values;
+pub mod stdvars;
+pub mod library;
 
 use crate::local::{CommandInterpreter, Lexer as LocalLexer, Parser as LocalParser};
 

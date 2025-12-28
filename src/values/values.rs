@@ -21,6 +21,7 @@ pub struct ControlFlow {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Int(i128),
+    UInt(u128),
     Float(f64),
     BigInt(String),
     String(String),
@@ -53,6 +54,7 @@ impl Value {
             Value::Nil => false,
             Value::Bool(b) => *b,
             Value::Int(i) => *i != 0,
+            Value::UInt(u) => *u != 0,
             Value::Float(n) => *n != 0.0 && !n.is_nan(),
             Value::BigInt(s) => s != "0" && !s.is_empty(),
             Value::String(s) => !s.is_empty(),
@@ -68,6 +70,7 @@ impl Value {
     pub fn type_name(&self) -> &str {
         match self {
             Value::Int(_) => "Int",
+            Value::UInt(_) => "UInt",
             Value::Float(_) => "Float",
             Value::BigInt(_) => "BigInt",
             Value::String(_) => "String",

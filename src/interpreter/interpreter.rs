@@ -3,6 +3,7 @@ use crate::parser::ast::{Expr, Literal, Stmt};
 use crate::values::values::{ControlFlow, Environment, Function, Value};
 use std::collections::HashMap;
 
+use crate::stdvars::stander_variables::define_std_vars;
 
 #[derive(Debug)]
 pub struct Interpreter {
@@ -19,8 +20,12 @@ pub struct Interpreter {
 
 impl Interpreter {
     pub fn new() -> Self {
+
+        let mut env = Environment::new();
+        define_std_vars(&mut env).expect("Failed to load std vars");
+
         Self {
-            environment: Environment::new(),
+            environment: env,
             visible: HashMap::new(),
             initialized_visible: HashMap::new(),
             visible_definitions: HashMap::new(),

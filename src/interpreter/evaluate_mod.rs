@@ -2,7 +2,6 @@ use crate::interpreter::interpreter::Interpreter;
 use crate::interpreter::{RuntimeError, RuntimeErrorKind, RuntimeResult};
 use crate::lexer::TokenKind;
 use crate::parser::ast::Expr;
-use crate::values::values::Function;
 use crate::values::values::Value;
 use std::collections::HashMap;
 
@@ -316,23 +315,38 @@ impl Interpreter {
             }
 
             Expr::FunctionCall { function, args } => {
-                // Get function from environment
+                // --------------------------------------------
+                // 1) Evaluate call-site arguments FIRST
+                // --------------------------------------------
+                let mut evaluated_args: HashMap<String, Value> = HashMap::new();
+                for (arg_name, arg_expr) in args {
+                    let arg_value = self.eval(arg_expr)?;
+                    evaluated_args.insert(arg_name.clone(), arg_value);
+                }
+
+                // --------------------------------------------
+                // 2) Builtin/standard function check FIRST
+                // --------------------------------------------
+                if let Some(result) = self.call_builtin(function, &evaluated_args) {
+                    return result;
+                }
+
+                // --------------------------------------------
+                // 3) Fallback: User-defined function
+                // --------------------------------------------
                 let func_value = self.environment.get(function)?;
 
                 match func_value {
                     Value::Function(func) => {
                         // === INITIALIZE VISIBLE BLOCKS FOR THIS FUNCTION ===
-                        // Check if this function has access to any visible blocks
                         for visible_block_name in &func.visible_blocks {
-                            // Check if the visible block exists
                             if !self.visible.contains_key(visible_block_name) {
                                 return Err(RuntimeError::custom(format!(
-                                    "Function '{}' references undefined visible block '{}'",
+                                    "Label '{}' references undefined visible block '{}'",
                                     function, visible_block_name
                                 )));
                             }
 
-                            // Initialize the visible block on FIRST access
                             let is_initialized = self
                                 .initialized_visible
                                 .get(visible_block_name)
@@ -340,16 +354,13 @@ impl Interpreter {
                                 .unwrap_or(false);
 
                             if !is_initialized {
-                                // Clone the definition to avoid borrow checker issues
-                                let block_def =
-                                    self.visible_definitions.get(visible_block_name).cloned();
+                                let block_def = self.visible_definitions.get(visible_block_name).cloned();
 
                                 if let Some(block_def) = block_def {
-                                    // Create a temporary scope to evaluate the initialization expressions
+                                    // temp scope for init expressions
                                     self.environment.push_scope();
 
                                     let mut value_map: HashMap<String, Value> = HashMap::new();
-
                                     for (var_name, var_expr) in &block_def {
                                         let value = self.eval(var_expr)?;
                                         value_map.insert(var_name.clone(), value);
@@ -357,7 +368,6 @@ impl Interpreter {
 
                                     self.environment.pop_scope();
 
-                                    // Store the initialized values
                                     self.visible.insert(visible_block_name.clone(), value_map);
                                     self.initialized_visible
                                         .insert(visible_block_name.clone(), true);
@@ -374,32 +384,25 @@ impl Interpreter {
                         let previous_context = self.current_function_context.clone();
                         self.current_function_context = Some(func.visible_blocks.clone());
 
-                        // Create new scope for function execution
+                        // New scope for function execution
                         self.environment.push_scope();
 
                         // Inject visible block variables into the function scope
                         for visible_block_name in &func.visible_blocks {
                             if let Some(variables) = self.visible.get(visible_block_name) {
                                 for (var_name, value) in variables {
-                                    // Define these variables in the function scope
                                     self.environment.define(var_name, value.clone())?;
                                 }
                             }
                         }
 
-                        // Build argument map from call-site arguments
-                        let mut arg_map: HashMap<String, Value> = HashMap::new();
-                        for (arg_name, arg_expr) in args {
-                            let arg_value = self.eval(arg_expr)?;
-                            arg_map.insert(arg_name.clone(), arg_value);
-                        }
-
-                        // Map external parameter names to internal variable names
+                        // Map call-site args (evaluated_args) to internal parameter names
+                        // func.params: external param names
+                        // func.defaults: internal variable names (as you described)
                         for (i, external_param) in func.params.iter().enumerate() {
                             let internal_name = &func.defaults[i];
 
-                            if let Some(arg_value) = arg_map.get(external_param) {
-                                // Bind argument to internal variable name
+                            if let Some(arg_value) = evaluated_args.get(external_param) {
                                 self.environment.define(internal_name, arg_value.clone())?;
                             } else {
                                 // Missing required parameter
@@ -417,12 +420,12 @@ impl Interpreter {
                             self.execute(stmt)?;
                         }
 
-                        // IMPORTANT: Save back any modifications to visible block variables
-                        // before popping the scope
+                        // Save back modifications to visible block vars
                         for visible_block_name in &func.visible_blocks {
                             if let Some(variables) = self.visible.get_mut(visible_block_name) {
-                                for (var_name, _) in variables.clone() {
-                                    // Get the potentially modified value from the environment
+                                // clone keys to avoid borrow issues
+                                let keys: Vec<String> = variables.keys().cloned().collect();
+                                for var_name in keys {
                                     if let Ok(new_value) = self.environment.get(&var_name) {
                                         variables.insert(var_name, new_value);
                                     }
@@ -430,12 +433,13 @@ impl Interpreter {
                             }
                         }
 
-                        // Pop scope and restore previous context
+                        // Pop scope + restore context
                         self.environment.pop_scope();
                         self.current_function_context = previous_context;
 
                         Ok(Value::Nil)
                     }
+
                     _ => Err(RuntimeError::custom(format!(
                         "'{}' is not callable (type: {})",
                         function,
@@ -443,6 +447,7 @@ impl Interpreter {
                     ))),
                 }
             }
+
 
             _ => Err(RuntimeError::custom("Unsupported expression")),
         }
